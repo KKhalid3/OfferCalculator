@@ -171,12 +171,16 @@ export async function performCalculation() {
         let baseTime = await getBaselineTime(service.id, quantity);
         
         // Schritt 7: Sonderangaben-Faktoren nur auf relevante Leistungen anwenden
+        // WICHTIG: Sonderangaben MIT requiredService sind Zusatzleistungen, KEINE Multiplikatoren!
+        // Diese werden als separate Positionen gezogen, nicht als Erschwernis multipliziert.
         let specialNoteFactor = 1;
         for (const noteId of (object.specialNotes || [])) {
           const isRelevant = await isSpecialNoteRelevantForService(noteId, serviceId);
           if (isRelevant) {
             const specialService = await databaseService.getSpecialServiceById(noteId);
-            if (specialService && specialService.factor && specialService.factor !== 1) {
+            // NUR als Multiplikator wenn KEIN requiredService vorhanden ist (= echte Erschwernis)
+            // Wenn requiredService vorhanden ist, wird die Leistung als separate Position gezogen
+            if (specialService && !specialService.requiredService && specialService.factor && specialService.factor !== 1) {
               specialNoteFactor *= specialService.factor;
             }
           }

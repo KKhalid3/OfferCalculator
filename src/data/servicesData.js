@@ -15,6 +15,8 @@ export const servicesData = [
         standardValuePerUnit: 45,
         formula: 'Mindestzeit, sonst Standardmodus (pro Raum/Fläche/Tag)',
         materialStandard: '1,02',
+        materialType: 'percent',
+        materialValue: 2, // 1,02 = 2%
         waitTime: 0,
         minTime: 45,
         efficiencyStart: null,
@@ -37,6 +39,8 @@ export const servicesData = [
         standardValuePerUnit: 90,
         formula: 'aus dem Onboarding',
         materialStandard: '',
+        materialType: 'none',
+        materialValue: 0,
         waitTime: 0,
         minTime: 90,
         efficiencyStart: null,

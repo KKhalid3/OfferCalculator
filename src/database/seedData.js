@@ -1,5 +1,68 @@
 import { getDatabase } from './database';
 
+/**
+ * Konvertiert materialStandard String zu materialType und materialValue
+ * Beispiele:
+ * - '1,02' → { type: 'percent', value: 2 }
+ * - '1,1' → { type: 'percent', value: 10 }
+ * - '1,2' → { type: 'percent', value: 20 }
+ * - '+5 %' → { type: 'percent', value: 5 }
+ * - '+10 %' → { type: 'percent', value: 10 }
+ * - '+22 %' → { type: 'percent', value: 22 }
+ * - '0,50 €/m²' → { type: 'fixed', value: 0.5 }
+ * - '' oder null → { type: 'none', value: 0 }
+ */
+function parseMaterialStandard(materialStandard) {
+  if (!materialStandard || materialStandard === '' || materialStandard === '-') {
+    return { type: 'none', value: 0 };
+  }
+  
+  const str = materialStandard.trim();
+  
+  // Format: "0,50 €/m²" oder "0.50 €/m²" - fester Betrag pro Einheit
+  if (str.includes('€')) {
+    const match = str.match(/([0-9]+[,.]?[0-9]*)/);
+    if (match) {
+      const value = parseFloat(match[1].replace(',', '.'));
+      return { type: 'fixed', value };
+    }
+  }
+  
+  // Format: "+5 %" oder "+10 %" oder "+22 %" - prozentualer Zuschlag
+  if (str.includes('%')) {
+    const match = str.match(/\+?\s*([0-9]+)/);
+    if (match) {
+      return { type: 'percent', value: parseInt(match[1], 10) };
+    }
+  }
+  
+  // Format: "1,02" oder "1,1" oder "1,2" - Faktor (1.x = x% Zuschlag)
+  // 1,02 = 2%, 1,1 = 10%, 1,2 = 20%
+  const factorMatch = str.match(/^1[,.]([0-9]+)$/);
+  if (factorMatch) {
+    const decimal = factorMatch[1];
+    // "02" → 2, "1" → 10, "2" → 20, "15" → 15
+    let percent;
+    if (decimal.length === 1) {
+      percent = parseInt(decimal, 10) * 10; // "1" → 10, "2" → 20
+    } else {
+      percent = parseInt(decimal, 10); // "02" → 2, "15" → 15
+    }
+    return { type: 'percent', value: percent };
+  }
+  
+  // Format mit Zusatz wie "10 % + Rollenpreis"
+  if (str.match(/^[0-9]+\s*%/)) {
+    const match = str.match(/^([0-9]+)/);
+    if (match) {
+      return { type: 'percent', value: parseInt(match[1], 10) };
+    }
+  }
+  
+  console.warn(`Unbekanntes Material-Format: "${materialStandard}"`);
+  return { type: 'none', value: 0 };
+}
+
 export async function seedServices(db, servicesData) {
   const collection = db.collections.services;
   
@@ -17,6 +80,9 @@ export async function seedServices(db, servicesData) {
   // Bulk-Insert mit Error-Handling
   try {
     const docs = servicesData.map(service => {
+      // Konvertiere materialStandard zu materialType und materialValue
+      const material = parseMaterialStandard(service.materialStandard);
+      
       const doc = {
         ...service,
         // Sicherstellen, dass alle Felder korrekt sind
@@ -27,9 +93,17 @@ export async function seedServices(db, servicesData) {
         unit: service.unit || '',
         formula: service.formula || '',
         materialStandard: service.materialStandard || '',
+        // Material-Kalkulation aus materialStandard ableiten (falls nicht explizit gesetzt)
+        materialType: service.materialType || material.type,
+        materialValue: service.materialValue !== undefined ? service.materialValue : material.value,
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
+      
+      // Debug-Log für Material-Konvertierung
+      if (service.materialStandard && material.type !== 'none') {
+        console.log(`📦 ${service.title}: "${service.materialStandard}" → ${material.type} ${material.value}${material.type === 'percent' ? '%' : '€'}`);
+      }
       
       // Sicherstellen, dass Arrays nicht null sind
       if (!Array.isArray(doc.includedIn)) {
@@ -112,15 +186,20 @@ export async function seedServices(db, servicesData) {
     let successCount = 0;
     for (let i = 0; i < servicesData.length; i++) {
       try {
+        const service = servicesData[i];
+        const material = parseMaterialStandard(service.materialStandard);
+        
         const doc = {
-          ...servicesData[i],
-          parentServiceId: servicesData[i].parentServiceId || '',
-          serviceType: servicesData[i].serviceType || '',
-          variant: servicesData[i].variant || '',
-          includedIn: servicesData[i].includedIn || [],
-          unit: servicesData[i].unit || '',
-          formula: servicesData[i].formula || '',
-          materialStandard: servicesData[i].materialStandard || '',
+          ...service,
+          parentServiceId: service.parentServiceId || '',
+          serviceType: service.serviceType || '',
+          variant: service.variant || '',
+          includedIn: service.includedIn || [],
+          unit: service.unit || '',
+          formula: service.formula || '',
+          materialStandard: service.materialStandard || '',
+          materialType: service.materialType || material.type,
+          materialValue: service.materialValue !== undefined ? service.materialValue : material.value,
           createdAt: Date.now(),
           updatedAt: Date.now()
         };

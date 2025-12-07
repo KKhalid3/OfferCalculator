@@ -350,43 +350,77 @@ export default function SpecialNotesOnboarding({ onComplete }) {
             )}
           </div>
 
-          {/* Zeitfaktor */}
-          <div style={{ background: "#ffebee", padding: "15px", borderRadius: "8px" }}>
-            <h3 style={{ margin: "0 0 15px 0", color: "#c62828", fontSize: "16px" }}>
-              ⏱️ Zeitfaktor
+          {/* Hinweis zur Berechnung */}
+          <div style={{ 
+            background: "#e8f5e9", 
+            padding: "15px", 
+            borderRadius: "8px",
+            border: "1px solid #c8e6c9"
+          }}>
+            <h3 style={{ margin: "0 0 10px 0", color: "#2e7d32", fontSize: "16px" }}>
+              📊 Berechnung
             </h3>
-            <p style={{ fontSize: "12px", color: "#666", marginBottom: "10px" }}>
-              Mit welchem Faktor wird die Arbeitszeit multipliziert?
-            </p>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <input
-                type="number"
-                value={formData.factor}
-                onChange={handleFactorChange}
-                step="0.05"
-                min="1"
-                max="5"
-                style={{ width: "100px", padding: "10px", fontSize: "16px" }}
-              />
-              <span style={{ fontSize: "16px" }}>×</span>
-              <span style={{ fontSize: "12px", color: "#888" }}>
-                (Default: {currentSpecialNote.factor || 1}×)
-              </span>
-            </div>
-
-            {/* Beispielrechnung */}
-            {formData.factor !== 1 && (
-              <div style={{ 
-                marginTop: "15px", 
-                padding: "10px", 
-                background: "#fff", 
-                borderRadius: "4px",
-                fontSize: "13px",
-                border: "1px solid #ffcdd2"
-              }}>
-                <strong>Beispiel:</strong> Bei 60 min Arbeitszeit → {(60 * formData.factor).toFixed(0)} min
+            {selectedRequiredService ? (
+              <div style={{ fontSize: "13px", color: "#1b5e20" }}>
+                <p style={{ margin: "0 0 12px 0" }}>
+                  Wird als <strong>separate Position</strong> kalkuliert:
+                </p>
+                <div style={{ 
+                  background: "#fff", 
+                  padding: "12px", 
+                  borderRadius: "6px",
+                  border: "1px solid #a5d6a7"
+                }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "12px" }}>
+                    {selectedRequiredService.standardValuePerUnit && (
+                      <div>
+                        <span style={{ color: "#666" }}>Zeit/Einheit:</span>{" "}
+                        <strong>{selectedRequiredService.standardValuePerUnit} min/{selectedRequiredService.unit || "m²"}</strong>
+                      </div>
+                    )}
+                    {selectedRequiredService.minTime && (
+                      <div>
+                        <span style={{ color: "#666" }}>Mindestzeit:</span>{" "}
+                        <strong>{selectedRequiredService.minTime} min</strong>
+                      </div>
+                    )}
+                    {selectedRequiredService.waitTime > 0 && (
+                      <div>
+                        <span style={{ color: "#666" }}>Wartezeit:</span>{" "}
+                        <strong>{selectedRequiredService.waitTime} min</strong>
+                      </div>
+                    )}
+                    {selectedRequiredService.materialStandard && (
+                      <div>
+                        <span style={{ color: "#666" }}>Material:</span>{" "}
+                        <strong>{selectedRequiredService.materialStandard}</strong>
+                      </div>
+                    )}
+                    {selectedRequiredService.efficiencyStart && (
+                      <div>
+                        <span style={{ color: "#666" }}>Effizienz ab:</span>{" "}
+                        <strong>{selectedRequiredService.efficiencyStart} {selectedRequiredService.unit || "m²"}</strong>
+                      </div>
+                    )}
+                    {selectedRequiredService.efficiencyCap && (
+                      <div>
+                        <span style={{ color: "#666" }}>Effizienz-Deckel:</span>{" "}
+                        <strong>{selectedRequiredService.efficiencyCap} {selectedRequiredService.unit || "m²"}</strong>
+                      </div>
+                    )}
+                  </div>
+                  {selectedRequiredService.formula && (
+                    <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px dashed #c8e6c9", fontSize: "11px", color: "#666" }}>
+                      <em>Formel: {selectedRequiredService.formula}</em>
+                    </div>
+                  )}
+                </div>
               </div>
+            ) : (
+              <p style={{ margin: 0, fontSize: "13px", color: "#1b5e20" }}>
+                Diese Sonderangabe hat keine Zusatzleistung. Sie dient nur als <strong>Information</strong> und 
+                wird ggf. separat nach tatsächlichem Aufwand abgerechnet.
+              </p>
             )}
           </div>
         </div>
