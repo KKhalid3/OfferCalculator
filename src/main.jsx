@@ -81,13 +81,78 @@ async function initApp() {
     console.log('✅ App erfolgreich gestartet');
   } catch (error) {
     console.error('❌ Failed to initialize app:', error);
-    document.getElementById('root').innerHTML = `
-      <div style="padding: 20px; color: red;">
-        <h1>Fehler beim Starten der Anwendung</h1>
-        <p>${error.message}</p>
-        <p>Bitte öffnen Sie die Browser-Konsole für weitere Details.</p>
+    
+    // Reset-Funktion für den Button
+    const handleResetDB = async () => {
+      try {
+        // IndexedDB löschen
+        const databases = await window.indexedDB.databases();
+        for (const db of databases) {
+          if (db.name && db.name.includes('offercalculator')) {
+            window.indexedDB.deleteDatabase(db.name);
+            console.log('Gelöscht:', db.name);
+          }
+        }
+        alert('Datenbank gelöscht. Seite wird neu geladen...');
+        window.location.reload();
+      } catch (resetError) {
+        console.error('Fehler beim Löschen:', resetError);
+        alert('Fehler beim Zurücksetzen der Datenbank. Bitte öffnen Sie die Browser-Konsole.');
+      }
+    };
+    
+    // Fehleranzeige mit Reset-Button
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = 'padding: 40px; max-width: 800px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;';
+    errorDiv.innerHTML = `
+      <div style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; padding: 30px; margin-bottom: 20px;">
+        <h1 style="color: #856404; margin-top: 0; font-size: 24px;">⚠️ Fehler beim Starten der Anwendung</h1>
+        <p style="color: #856404; font-size: 16px; margin: 15px 0;">
+          <strong>Fehler:</strong> ${error.message}
+        </p>
+        <p style="color: #856404; font-size: 14px; margin: 15px 0;">
+          Dies ist häufig ein Schema-Migrationsfehler. Bitte versuchen Sie die Datenbank zurückzusetzen.
+        </p>
+        <p style="color: #856404; font-size: 13px; margin: 15px 0;">
+          Bitte öffnen Sie die Browser-Konsole (F12) für weitere Details.
+        </p>
+      </div>
+      
+      <div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px;">
+        <h2 style="color: #333; font-size: 18px; margin-top: 0;">🔧 Lösung: Datenbank zurücksetzen</h2>
+        <p style="color: #666; font-size: 14px; margin: 10px 0;">
+          Wenn die Datenbank ein veraltetes Schema hat, können Sie sie hier zurücksetzen. 
+          <strong>Alle gespeicherten Daten werden gelöscht</strong> und die Anwendung startet mit Standardwerten neu.
+        </p>
+        <button 
+          id="reset-db-button"
+          style="
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: background 0.2s;
+          "
+          onmouseover="this.style.background='#c82333'"
+          onmouseout="this.style.background='#dc3545'"
+        >
+          🔄 Datenbank zurücksetzen
+        </button>
+        <p style="color: #999; font-size: 12px; margin-top: 10px;">
+          Nach dem Klick wird die Seite automatisch neu geladen.
+        </p>
       </div>
     `;
+    
+    document.getElementById('root').appendChild(errorDiv);
+    
+    // Event Listener für Reset-Button
+    document.getElementById('reset-db-button').addEventListener('click', handleResetDB);
   }
 }
 
