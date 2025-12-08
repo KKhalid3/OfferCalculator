@@ -51,6 +51,12 @@ export const serviceSchema = {
     subWorkflowTotal: { type: ['number', 'null'] }, // Gesamtanzahl Schritte in der Hauptleistung
     subWorkflowExplanation: { type: ['string', 'null'] }, // Erklärung des Schritts innerhalb der Hauptleistung
 
+    // === Mehrpersonal-Fähigkeit ===
+    allowMultiEmployee: { type: ['boolean', 'null'] }, // Kann von mehreren Personen gleichzeitig ausgeführt werden?
+    multiEmployeeEfficiencyKeep: { type: ['boolean', 'null'] }, // Bleibt Effizienz bei Aufteilung erhalten?
+    minQuantityForMultiEmployee: { type: ['number', 'null'] }, // Ab welcher Menge macht Mehrpersonal Sinn?
+    maxEmployeesForService: { type: ['number', 'null'] }, // Max sinnvolle Mitarbeiter für diese Leistung
+
     createdAt: { type: 'number' },
     updatedAt: { type: 'number' }
   },

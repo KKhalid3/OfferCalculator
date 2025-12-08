@@ -21,6 +21,11 @@ export default function CompanyOnboarding({ onComplete }) {
     siteSetupMinutes: 0,
     siteClearanceHours: 1,
     siteClearanceMinutes: 0,
+    // Mehrpersonal-Planung
+    minHoursForMultiEmployee: 16,
+    minHoursPerEmployee: 6,
+    maxEfficiencyLossPercent: 10,
+    allowParallelRoomWork: true,
   });
 
   useEffect(() => {
@@ -44,15 +49,20 @@ export default function CompanyOnboarding({ onComplete }) {
         siteSetupMinutes: siteSetup % 60,
         siteClearanceHours: Math.floor(siteClearance / 60),
         siteClearanceMinutes: siteClearance % 60,
+        // Mehrpersonal-Planung
+        minHoursForMultiEmployee: settings.minHoursForMultiEmployee || 16,
+        minHoursPerEmployee: settings.minHoursPerEmployee || 6,
+        maxEfficiencyLossPercent: settings.maxEfficiencyLossPercent || 10,
+        allowParallelRoomWork: settings.allowParallelRoomWork ?? true,
       });
     }
   }, [settings]);
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: parseFloat(value) || 0,
+      [name]: type === 'checkbox' ? checked : (parseFloat(value) || 0),
     }));
   };
 
@@ -70,6 +80,11 @@ export default function CompanyOnboarding({ onComplete }) {
       siteSetup: formData.siteSetupHours * 60 + formData.siteSetupMinutes,
       siteClearance:
         formData.siteClearanceHours * 60 + formData.siteClearanceMinutes,
+      // Mehrpersonal-Planung
+      minHoursForMultiEmployee: formData.minHoursForMultiEmployee,
+      minHoursPerEmployee: formData.minHoursPerEmployee,
+      maxEfficiencyLossPercent: formData.maxEfficiencyLossPercent,
+      allowParallelRoomWork: formData.allowParallelRoomWork,
       onboardingCompleted: true,
     };
 
@@ -254,6 +269,100 @@ export default function CompanyOnboarding({ onComplete }) {
                 />
                 <span>min</span>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Mehrpersonal-Planung */}
+        <div className="form-group" style={{ marginTop: "30px", paddingTop: "20px", borderTop: "1px solid #eee" }}>
+          <h3 style={{ margin: "0 0 15px 0", fontSize: "16px", color: "#333" }}>👥 Mehrpersonal-Planung</h3>
+          <p style={{ color: "#666", fontSize: "13px", marginBottom: "15px" }}>
+            Definieren Sie, ab wann der Einsatz mehrerer Mitarbeiter in Betracht gezogen wird.
+          </p>
+          
+          <div style={{ display: "grid", gap: "20px" }}>
+            {/* Ab wieviel Stunden Mehrpersonal */}
+            <div>
+              <label style={{ display: "block", marginBottom: "5px" }}>
+                Mehrpersonal-Schwelle (ab dieser Gesamtarbeitszeit):
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <input
+                  type="number"
+                  name="minHoursForMultiEmployee"
+                  value={formData.minHoursForMultiEmployee}
+                  onChange={handleChange}
+                  min="8"
+                  max="80"
+                  style={{ width: "80px" }}
+                />
+                <span>Stunden</span>
+              </div>
+              <small style={{ color: "#888" }}>
+                Erst ab dieser Stundenzahl wird Mehrpersonal in Betracht gezogen (z.B. 16h = 2 Arbeitstage)
+              </small>
+            </div>
+            
+            {/* Minimum Stunden pro Mitarbeiter */}
+            <div>
+              <label style={{ display: "block", marginBottom: "5px" }}>
+                Minimum pro Mitarbeiter:
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <input
+                  type="number"
+                  name="minHoursPerEmployee"
+                  value={formData.minHoursPerEmployee}
+                  onChange={handleChange}
+                  min="2"
+                  max="8"
+                  step="0.5"
+                  style={{ width: "80px" }}
+                />
+                <span>Stunden pro Person</span>
+              </div>
+              <small style={{ color: "#888" }}>
+                Jeder Mitarbeiter sollte mindestens diese Stunden Arbeit haben (vermeidet Leerlauf)
+              </small>
+            </div>
+            
+            {/* Max Effizienzverlust */}
+            <div>
+              <label style={{ display: "block", marginBottom: "5px" }}>
+                Max. akzeptabler Effizienzverlust:
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <input
+                  type="number"
+                  name="maxEfficiencyLossPercent"
+                  value={formData.maxEfficiencyLossPercent}
+                  onChange={handleChange}
+                  min="0"
+                  max="30"
+                  style={{ width: "80px" }}
+                />
+                <span>%</span>
+              </div>
+              <small style={{ color: "#888" }}>
+                Bei diesem Effizienzverlust durch Aufteilung wird auf Mehrpersonal verzichtet
+              </small>
+            </div>
+            
+            {/* Parallelarbeit erlauben */}
+            <div>
+              <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  name="allowParallelRoomWork"
+                  checked={formData.allowParallelRoomWork}
+                  onChange={handleChange}
+                  style={{ width: "18px", height: "18px" }}
+                />
+                <span>Parallelarbeit in verschiedenen Räumen erlauben</span>
+              </label>
+              <small style={{ color: "#888", display: "block", marginLeft: "28px" }}>
+                Wenn aktiv, können mehrere Mitarbeiter gleichzeitig in verschiedenen Räumen arbeiten (erfordert Kundenfreigabe)
+              </small>
             </div>
           </div>
         </div>

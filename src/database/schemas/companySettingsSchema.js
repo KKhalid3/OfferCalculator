@@ -24,6 +24,19 @@ export const companySettingsSchema = {
         // Onboarding-Status
         onboardingCompleted: { type: 'boolean' },
 
+        // === Mehrpersonal-Planung ===
+        // Ab wieviel Gesamtstunden Mehrpersonal überhaupt in Betracht gezogen wird
+        minHoursForMultiEmployee: { type: ['number', 'null'] }, // z.B. 16h = 2 Arbeitstage
+        
+        // Mindestens X Stunden pro Mitarbeiter (um Leerlauf zu vermeiden)
+        minHoursPerEmployee: { type: ['number', 'null'] }, // z.B. 6h (nicht unter 1 Tag)
+        
+        // Maximaler akzeptabler Effizienzverlust in % wenn mehrere Mitarbeiter
+        maxEfficiencyLossPercent: { type: ['number', 'null'] }, // z.B. 10%
+        
+        // Ob Parallelarbeit in verschiedenen Räumen erlaubt ist (erfordert Kundenfreigabe)
+        allowParallelRoomWork: { type: ['boolean', 'null'] },
+
         // Timestamps
         createdAt: { type: 'number' },
         updatedAt: { type: 'number' }
@@ -42,6 +55,13 @@ export const defaultCompanySettings = {
     siteSetup: 60, // 1h in Minuten
     siteClearance: 60, // 1h in Minuten
     onboardingCompleted: false,
+    
+    // Mehrpersonal-Planung Defaults
+    minHoursForMultiEmployee: 16, // Ab 16h (2 Arbeitstage) Mehrpersonal erwägen
+    minHoursPerEmployee: 6, // Min 6h pro Mitarbeiter (Restzeit max 2h Leerlauf)
+    maxEfficiencyLossPercent: 10, // Max 10% Effizienzverlust akzeptabel
+    allowParallelRoomWork: true, // Parallelarbeit in verschiedenen Räumen erlaubt
+    
     createdAt: Date.now(),
     updatedAt: Date.now()
 };
