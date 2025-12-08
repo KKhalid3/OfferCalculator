@@ -541,11 +541,21 @@ export default function DayPlanningDialog({
 
   // =====================================================
   // INTELLIGENTE TAGESPLANUNG - Optimale Tagesfüllung
+  // Mit Überstunden-Toleranz und intelligenter Task-Aufteilung
   // =====================================================
   const detailedPlan = useMemo(() => {
     if (!results?.objects) return { days: [], summary: {} };
 
     const dailyMinutes = MINUTES_PER_DAY;
+
+    // Überstunden-Einstellungen aus companySettings
+    const maxOvertimePercent = companySettings?.maxOvertimePercent ?? 15;
+    const minTaskSplitTime = companySettings?.minTaskSplitTime ?? 60;
+
+    // Maximale Tageszeit inkl. Überstunden
+    const maxDayMinutes = Math.round(
+      dailyMinutes * (1 + maxOvertimePercent / 100)
+    );
 
     // Schritt 1: Alle Tasks sammeln mit Details
     const taskPool = [];
@@ -603,6 +613,8 @@ export default function DayPlanningDialog({
       totalWaitTime: 0,
       dryingPhases: [],
       utilization: 0, // Auslastung in %
+      hasOvertime: false,
+      overtimeMinutes: 0,
     };
 
     let timeInDay = 0;
@@ -729,12 +741,65 @@ export default function DayPlanningDialog({
     };
 
     // Hilfsfunktion: Task oder Teil davon zum Tag hinzufügen
+    // MIT Überstunden-Logik und intelligenter Task-Aufteilung
     const addTaskToDay = (task, objectId) => {
-      const availableTime = dailyMinutes - timeInDay;
-      if (availableTime <= 0) return false;
+      const remainingInDay = dailyMinutes - timeInDay;
+      const maxRemainingWithOvertime = maxDayMinutes - timeInDay;
 
-      const timeToSchedule = Math.min(task.remainingTime, availableTime);
-      const isPartial = timeToSchedule < task.remainingTime;
+      // Wenn Tag schon über Maximum → kein Platz mehr
+      if (maxRemainingWithOvertime <= 0) return false;
+
+      let timeToSchedule = 0;
+      let isOvertime = false;
+      let isPartial = false;
+
+      // ENTSCHEIDUNGSLOGIK:
+      // 1. Passt Task komplett in reguläre Zeit?
+      if (task.remainingTime <= remainingInDay) {
+        timeToSchedule = task.remainingTime;
+        isPartial = false;
+        isOvertime = false;
+      }
+      // 2. Passt Task komplett MIT Überstunden?
+      else if (task.remainingTime <= maxRemainingWithOvertime) {
+        timeToSchedule = task.remainingTime;
+        isPartial = false;
+        isOvertime = timeInDay + task.remainingTime > dailyMinutes;
+      }
+      // 3. Task muss aufgeteilt werden
+      else {
+        // Berechne wie viel Rest auf Tag 2 käme
+        const potentialRest = task.remainingTime - maxRemainingWithOvertime;
+
+        // Wenn Rest < minTaskSplitTime → alles mit Überstunden machen (wenn möglich)
+        if (potentialRest < minTaskSplitTime && potentialRest > 0) {
+          // Prüfe ob wir den kompletten Task mit etwas mehr Überstunden schaffen könnten
+          // (Ausnahme: Wenn Task viel zu groß, dann normal aufteilen)
+          if (task.remainingTime <= maxDayMinutes * 1.1) {
+            // Akzeptiere etwas mehr Überstunden um nicht für Rest einen neuen Tag zu brauchen
+            timeToSchedule = task.remainingTime;
+            isPartial = false;
+            isOvertime = true;
+          } else {
+            // Task zu groß - aufteilen aber mit Überstunden
+            timeToSchedule = maxRemainingWithOvertime;
+            isPartial = true;
+            isOvertime = timeInDay + timeToSchedule > dailyMinutes;
+          }
+        }
+        // Wenn heutiger Teil < minTaskSplitTime → lieber alles morgen
+        else if (remainingInDay < minTaskSplitTime && remainingInDay > 0) {
+          // Zu wenig Zeit heute für sinnvollen Arbeitsblock → Task auf morgen verschieben
+          return false; // Signal: Tag beenden, Task morgen machen
+        }
+        // Normale Aufteilung: Mit Überstunden so viel wie möglich heute
+        else {
+          timeToSchedule = maxRemainingWithOvertime;
+          isPartial = true;
+          isOvertime = timeInDay + timeToSchedule > dailyMinutes;
+        }
+      }
+
       const isContinuation = task.totalTime !== task.remainingTime;
 
       const taskEntry = {
@@ -744,6 +809,10 @@ export default function DayPlanningDialog({
         scheduledTime: timeToSchedule,
         isPartial: isPartial,
         isContinuation: isContinuation,
+        isOvertime: isOvertime,
+        overtimeMinutes: isOvertime
+          ? Math.max(0, timeInDay + timeToSchedule - dailyMinutes)
+          : 0,
         continuationInfo: isContinuation
           ? `Fortsetzung von Tag ${days.length}`
           : isPartial
@@ -755,6 +824,12 @@ export default function DayPlanningDialog({
       currentDay.totalWorkTime += timeToSchedule;
       timeInDay += timeToSchedule;
       task.remainingTime -= timeToSchedule;
+
+      // Überstunden-Marker für den Tag setzen
+      if (isOvertime) {
+        currentDay.hasOvertime = true;
+        currentDay.overtimeMinutes = Math.max(0, timeInDay - dailyMinutes);
+      }
 
       // Trocknungsphase nur wenn Task komplett abgeschlossen
       if (task.remainingTime <= 0 && task.waitTime > 0) {
@@ -862,9 +937,17 @@ export default function DayPlanningDialog({
 
     // Hilfsfunktion: Neuen Tag starten
     const startNewDay = () => {
+      // Auslastung berechnen (bei Überstunden kann > 100% sein)
       currentDay.utilization = Math.round(
         (currentDay.totalWorkTime / dailyMinutes) * 100
       );
+      // Überstunden-Info final setzen
+      currentDay.overtimeMinutes = Math.max(
+        0,
+        currentDay.totalWorkTime - dailyMinutes
+      );
+      currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
+
       days.push({ ...currentDay });
       currentDay = {
         dayNumber: days.length + 1,
@@ -873,6 +956,8 @@ export default function DayPlanningDialog({
         totalWaitTime: 0,
         dryingPhases: [],
         utilization: 0,
+        hasOvertime: false,
+        overtimeMinutes: 0,
       };
       timeInDay = 0;
       activeDryingPhases = []; // Über Nacht trocknen alle Oberflächen
@@ -912,8 +997,9 @@ export default function DayPlanningDialog({
         }
       } else {
         // Kein Task verfügbar
-        if (timeInDay >= dailyMinutes * 0.95) {
-          // Tag ist fast voll
+        // Prüfe ob Tag mit Überstunden fast voll ist
+        if (timeInDay >= maxDayMinutes * 0.95) {
+          // Tag ist fast voll (inkl. Überstunden)
           startNewDay();
         } else if (activeDryingPhases.length > 0) {
           // Trocknungszeit - prüfen ob heute noch etwas passiert
@@ -921,8 +1007,9 @@ export default function DayPlanningDialog({
             ...activeDryingPhases.map((d) => d.endsAt)
           );
 
-          if (minDryingEnd <= dailyMinutes) {
-            // Trocknung endet heute - Zeit vorspulen
+          // Trocknung kann auch während Überstunden enden
+          if (minDryingEnd <= maxDayMinutes) {
+            // Trocknung endet heute (evtl. mit Überstunden) - Zeit vorspulen
             timeInDay = minDryingEnd;
             activeDryingPhases = activeDryingPhases.filter(
               (d) => d.endsAt > timeInDay
@@ -959,6 +1046,11 @@ export default function DayPlanningDialog({
       currentDay.utilization = Math.round(
         (currentDay.totalWorkTime / dailyMinutes) * 100
       );
+      currentDay.overtimeMinutes = Math.max(
+        0,
+        currentDay.totalWorkTime - dailyMinutes
+      );
+      currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
       days.push(currentDay);
     }
 
@@ -1068,6 +1160,23 @@ export default function DayPlanningDialog({
             : avgUtilization >= 60
             ? "info"
             : "warning",
+      });
+    }
+
+    // Überstunden-Info
+    const daysWithOvertime = days.filter(
+      (d) => d.hasOvertime && d.overtimeMinutes > 0
+    );
+    const totalOvertimeMinutes = days.reduce(
+      (sum, d) => sum + (d.overtimeMinutes || 0),
+      0
+    );
+    if (daysWithOvertime.length > 0) {
+      employeeExplanation.push({
+        text: `Überstunden: ${formatTime(totalOvertimeMinutes)} an ${
+          daysWithOvertime.length
+        } Tag(en) – vermeidet ineffiziente Kurztage.`,
+        type: "info",
       });
     }
 
@@ -1466,6 +1575,11 @@ export default function DayPlanningDialog({
                       }}
                     >
                       <span>Arbeit: {formatTime(day.totalWorkTime)}</span>
+                      {day.hasOvertime && day.overtimeMinutes > 0 && (
+                        <span style={{ color: "#1565c0", fontWeight: "500" }}>
+                          (+{formatTime(day.overtimeMinutes)} Überstunden)
+                        </span>
+                      )}
                       {day.totalWaitTime > 0 && (
                         <span style={{ color: "#e65100" }}>
                           Trocknung: {formatTime(day.totalWaitTime)}

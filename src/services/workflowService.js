@@ -310,10 +310,16 @@ export function calculateOptimalEmployees(totalHours, dailyHours = HOURS_PER_DAY
  * 2. Tasks über Tage aufteilen wenn nötig
  * 3. Logische Abhängigkeiten respektieren
  * 4. Tage so voll wie möglich füllen
+ * 5. Überstunden-Toleranz für kleine Rest-Tasks
  */
 export async function planWorkflowOptimized(calculations, customerApproval) {
   const companySettings = await databaseService.getCompanySettings();
   const dailyMinutes = (companySettings?.dailyHours || HOURS_PER_DAY) * 60;
+
+  // Überstunden-Einstellungen
+  const maxOvertimePercent = companySettings?.maxOvertimePercent ?? 15;
+  const minTaskSplitTime = companySettings?.minTaskSplitTime ?? 60;
+  const maxDayMinutes = Math.round(dailyMinutes * (1 + maxOvertimePercent / 100));
 
   // Schritt 1: Alle Tasks mit Details anreichern und nach Objekten gruppieren
   const enrichedCalcs = await sortServicesByWorkflow(calculations);
@@ -409,15 +415,58 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
     return null;
   }
 
-  // Hilfsfunktion: Task zum Tag hinzufügen (mit möglicher Aufteilung)
+  // Hilfsfunktion: Task zum Tag hinzufügen (mit Überstunden-Logik)
   function addTaskToDay(task, objectId) {
-    const availableTime = dailyMinutes - currentDay.minutes;
+    const remainingInDay = dailyMinutes - currentDay.minutes;
+    const maxRemainingWithOvertime = maxDayMinutes - currentDay.minutes;
 
-    if (availableTime <= 0) {
-      return false; // Tag ist voll
+    // Wenn Tag schon über Maximum → kein Platz mehr
+    if (maxRemainingWithOvertime <= 0) return false;
+
+    let timeToSchedule = 0;
+    let isOvertime = false;
+    let isPartial = false;
+
+    // ENTSCHEIDUNGSLOGIK:
+    // 1. Passt Task komplett in reguläre Zeit?
+    if (task.remainingTime <= remainingInDay) {
+      timeToSchedule = task.remainingTime;
+      isPartial = false;
+      isOvertime = false;
     }
+    // 2. Passt Task komplett MIT Überstunden?
+    else if (task.remainingTime <= maxRemainingWithOvertime) {
+      timeToSchedule = task.remainingTime;
+      isPartial = false;
+      isOvertime = currentDay.minutes + task.remainingTime > dailyMinutes;
+    }
+    // 3. Task muss aufgeteilt werden
+    else {
+      const potentialRest = task.remainingTime - maxRemainingWithOvertime;
 
-    const timeToSchedule = Math.min(task.remainingTime, availableTime);
+      // Wenn Rest < minTaskSplitTime → alles mit Überstunden machen (wenn möglich)
+      if (potentialRest < minTaskSplitTime && potentialRest > 0) {
+        if (task.remainingTime <= maxDayMinutes * 1.1) {
+          timeToSchedule = task.remainingTime;
+          isPartial = false;
+          isOvertime = true;
+        } else {
+          timeToSchedule = maxRemainingWithOvertime;
+          isPartial = true;
+          isOvertime = currentDay.minutes + timeToSchedule > dailyMinutes;
+        }
+      }
+      // Wenn heutiger Teil < minTaskSplitTime → lieber alles morgen
+      else if (remainingInDay < minTaskSplitTime && remainingInDay > 0) {
+        return false; // Task auf morgen verschieben
+      }
+      // Normale Aufteilung: Mit Überstunden so viel wie möglich heute
+      else {
+        timeToSchedule = maxRemainingWithOvertime;
+        isPartial = true;
+        isOvertime = currentDay.minutes + timeToSchedule > dailyMinutes;
+      }
+    }
 
     // Task oder Teil davon einplanen
     const taskEntry = {
@@ -428,15 +477,22 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
       workArea: task.workArea,
       startTime: currentDay.minutes,
       duration: timeToSchedule,
-      isPartial: timeToSchedule < task.remainingTime,
+      isPartial: isPartial,
       isContinuation: task.totalTime !== task.remainingTime,
-      waitTime: (timeToSchedule === task.remainingTime) ? task.waitTime : 0, // Trocknung nur wenn komplett
+      isOvertime: isOvertime,
+      waitTime: (!isPartial) ? task.waitTime : 0, // Trocknung nur wenn komplett
     };
 
     currentDay.tasks.push(taskEntry);
     currentDay.minutes += timeToSchedule;
     currentDay.hours = currentDay.minutes / 60;
     task.remainingTime -= timeToSchedule;
+
+    // Überstunden-Marker
+    if (isOvertime) {
+      currentDay.hasOvertime = true;
+      currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
+    }
 
     // Trocknungsphase starten wenn Task abgeschlossen und Wartezeit > 0
     if (task.remainingTime <= 0 && task.waitTime > 0) {
@@ -500,19 +556,22 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
         currentObjectIndex = (currentObjectIndex + 1) % objectIds.length;
       }
     } else {
-      // Kein Task verfügbar - entweder alle in Trocknung oder Tag voll
-      if (currentDay.minutes >= dailyMinutes * 0.95) {
-        // Tag ist fast voll
+      // Kein Task verfügbar - entweder alle in Trocknung oder Tag voll (inkl. Überstunden)
+      if (currentDay.minutes >= maxDayMinutes * 0.95) {
+        // Tag ist fast voll (inkl. Überstunden)
+        // Überstunden-Info setzen
+        currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
+        currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
         days.push(currentDay);
         currentDay = createNewDay(days.length + 1);
         activeDryingPhases = [];
       } else if (activeDryingPhases.length > 0) {
         // Trocknungszeit - Zeit vorspulen zur nächsten Aktivität
-        // oder Tag beenden wenn Trocknung über Nacht
+        // oder Tag beenden wenn Trocknung über Nacht (auch mit Überstunden)
         const minDryingEnd = Math.min(...activeDryingPhases.map(d => d.endsAt));
 
-        if (minDryingEnd <= dailyMinutes) {
-          // Trocknung endet heute noch - Zeit vorspulen
+        if (minDryingEnd <= maxDayMinutes) {
+          // Trocknung endet heute noch (evtl. mit Überstunden) - Zeit vorspulen
           currentDay.minutes = minDryingEnd;
           currentDay.hours = currentDay.minutes / 60;
           activeDryingPhases = activeDryingPhases.filter(d => d.endsAt > currentDay.minutes);
@@ -529,6 +588,8 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
             continue;
           } else {
             // Tag beenden - Trocknung über Nacht
+            currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
+            currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
             days.push(currentDay);
             currentDay = createNewDay(days.length + 1);
             activeDryingPhases = [];
@@ -538,6 +599,8 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
         // Keine Trocknungsphase und kein Task - sollte nicht passieren
         // Sicherheitshalber neuen Tag starten
         if (currentDay.tasks.length > 0) {
+          currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
+          currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
           days.push(currentDay);
           currentDay = createNewDay(days.length + 1);
         } else {
@@ -549,6 +612,8 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
 
   // Letzten Tag hinzufügen
   if (currentDay.tasks.length > 0) {
+    currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
+    currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
     days.push(currentDay);
   }
 
@@ -592,7 +657,9 @@ function createNewDay(dayNumber) {
     hours: 0,
     minutes: 0,
     tasks: [],
-    waitTimes: []
+    waitTimes: [],
+    hasOvertime: false,
+    overtimeMinutes: 0
   };
 }
 
