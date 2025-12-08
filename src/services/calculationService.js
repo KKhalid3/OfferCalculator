@@ -261,6 +261,15 @@ export async function performCalculation() {
           efficiencyCap: service.efficiencyCap || null,
           efficiencyStepPercent: service.efficiencyStepPercent || null,
           maxProductivityPerDay: service.maxProductivityPerDay || null,
+          // === WORKFLOW-REIHENFOLGE ===
+          workflowOrder: service.workflowOrder || 20,
+          workflowPhase: service.workflowPhase || 'beschichtung',
+          workflowExplanation: service.workflowExplanation || null,
+          workflowTip: service.workflowTip || null,
+          // === UNTERLEISTUNGS-REIHENFOLGE ===
+          subWorkflowOrder: service.subWorkflowOrder || null,
+          subWorkflowTotal: service.subWorkflowTotal || null,
+          subWorkflowExplanation: service.subWorkflowExplanation || null,
         });
         
         objectResult.totalTime += finalTime;

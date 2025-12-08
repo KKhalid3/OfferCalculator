@@ -16,9 +16,9 @@ function parseMaterialStandard(materialStandard) {
   if (!materialStandard || materialStandard === '' || materialStandard === '-') {
     return { type: 'none', value: 0 };
   }
-  
+
   const str = materialStandard.trim();
-  
+
   // Format: "0,50 €/m²" oder "0.50 €/m²" - fester Betrag pro Einheit
   if (str.includes('€')) {
     const match = str.match(/([0-9]+[,.]?[0-9]*)/);
@@ -27,7 +27,7 @@ function parseMaterialStandard(materialStandard) {
       return { type: 'fixed', value };
     }
   }
-  
+
   // Format: "+5 %" oder "+10 %" oder "+22 %" - prozentualer Zuschlag
   if (str.includes('%')) {
     const match = str.match(/\+?\s*([0-9]+)/);
@@ -35,7 +35,7 @@ function parseMaterialStandard(materialStandard) {
       return { type: 'percent', value: parseInt(match[1], 10) };
     }
   }
-  
+
   // Format: "1,02" oder "1,1" oder "1,2" - Faktor (1.x = x% Zuschlag)
   // 1,02 = 2%, 1,1 = 10%, 1,2 = 20%
   const factorMatch = str.match(/^1[,.]([0-9]+)$/);
@@ -50,7 +50,7 @@ function parseMaterialStandard(materialStandard) {
     }
     return { type: 'percent', value: percent };
   }
-  
+
   // Format mit Zusatz wie "10 % + Rollenpreis"
   if (str.match(/^[0-9]+\s*%/)) {
     const match = str.match(/^([0-9]+)/);
@@ -58,14 +58,14 @@ function parseMaterialStandard(materialStandard) {
       return { type: 'percent', value: parseInt(match[1], 10) };
     }
   }
-  
+
   console.warn(`Unbekanntes Material-Format: "${materialStandard}"`);
   return { type: 'none', value: 0 };
 }
 
 export async function seedServices(db, servicesData) {
   const collection = db.collections.services;
-  
+
   // Prüfen ob bereits Daten vorhanden
   const existing = await collection.count().exec();
   if (existing > 0) {
@@ -74,15 +74,15 @@ export async function seedServices(db, servicesData) {
     await collection.find().remove();
     console.log('Alte Services gelöscht');
   }
-  
+
   console.log('Seeding', servicesData.length, 'Services...');
-  
+
   // Bulk-Insert mit Error-Handling
   try {
     const docs = servicesData.map(service => {
       // Konvertiere materialStandard zu materialType und materialValue
       const material = parseMaterialStandard(service.materialStandard);
-      
+
       const doc = {
         ...service,
         // Sicherstellen, dass alle Felder korrekt sind
@@ -99,27 +99,27 @@ export async function seedServices(db, servicesData) {
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
-      
+
       // Debug-Log für Material-Konvertierung
       if (service.materialStandard && material.type !== 'none') {
         console.log(`📦 ${service.title}: "${service.materialStandard}" → ${material.type} ${material.value}${material.type === 'percent' ? '%' : '€'}`);
       }
-      
+
       // Sicherstellen, dass Arrays nicht null sind
       if (!Array.isArray(doc.includedIn)) {
         doc.includedIn = [];
       }
-      
+
       return doc;
     });
-    
+
     console.log('Erstes Service-Dokument:', JSON.stringify(docs[0], null, 2));
-    
+
     // Verwende einzelnes insert statt upsert - wir haben ja vorher gelöscht
     // upsert scheint nicht zu funktionieren, daher verwenden wir insert
     let successCount = 0;
     let errorCount = 0;
-    
+
     for (const doc of docs) {
       try {
         // Prüfe ob Dokument bereits existiert (sollte nicht, da wir gelöscht haben)
@@ -129,11 +129,11 @@ export async function seedServices(db, servicesData) {
           successCount++;
           continue;
         }
-        
+
         // Erstelle neues Dokument
         await collection.insert(doc);
         successCount++;
-        
+
         // Debug: Prüfe nach jedem 10. Insert
         if (successCount % 10 === 0) {
           const currentCount = await collection.count().exec();
@@ -147,16 +147,16 @@ export async function seedServices(db, servicesData) {
         }
       }
     }
-    
+
     console.log(`✅ ${successCount} von ${docs.length} Services eingefügt (${errorCount} Fehler)`);
-    
+
     // Warte kurz, damit RxDB die Daten committed
     await new Promise(resolve => setTimeout(resolve, 200));
-    
+
     // Prüfen ob wirklich gespeichert
     const count = await collection.count().exec();
     console.log(`✅ ${count} Services in DB nach Insert`);
-    
+
     if (count === 0 && successCount > 0) {
       console.error('❌ PROBLEM: Services wurden eingefügt, aber count() gibt 0 zurück!');
       // Versuche direkt zu lesen
@@ -167,7 +167,7 @@ export async function seedServices(db, servicesData) {
         console.error('Auch findOne() findet nichts!');
       }
     }
-    
+
     // Zusätzliche Prüfung: Lese ein Dokument direkt
     if (count > 0) {
       const firstDoc = await collection.findOne(docs[0].id).exec();
@@ -180,7 +180,7 @@ export async function seedServices(db, servicesData) {
   } catch (error) {
     console.error('❌ Fehler beim Speichern der Services:', error);
     console.error('Error Details:', error.message);
-    
+
     // Versuche einzeln einzufügen, um das fehlerhafte Dokument zu finden
     console.log('Versuche einzelnes Einfügen mit upsert...');
     let successCount = 0;
@@ -188,7 +188,7 @@ export async function seedServices(db, servicesData) {
       try {
         const service = servicesData[i];
         const material = parseMaterialStandard(service.materialStandard);
-        
+
         const doc = {
           ...service,
           parentServiceId: service.parentServiceId || '',
@@ -209,7 +209,7 @@ export async function seedServices(db, servicesData) {
         console.error(`Fehler bei Service ${i} (${servicesData[i].id}):`, insertError.message);
       }
     }
-    
+
     const finalCount = await collection.count().exec();
     console.log(`Nach einzelnem Insert: ${finalCount} Services in DB (${successCount} erfolgreich)`);
   }
@@ -217,9 +217,9 @@ export async function seedServices(db, servicesData) {
 
 export async function seedSpecialServices(db, specialServicesData) {
   const collection = db.collections.specialServices;
-  
+
   console.log('Seeding', specialServicesData.length, 'Special Services...');
-  
+
   // Verwende upsert statt insert, um CONFLICT-Fehler zu vermeiden
   let successCount = 0;
   for (const special of specialServicesData) {
@@ -238,7 +238,7 @@ export async function seedSpecialServices(db, specialServicesData) {
         factor: special.factor || null,
         updatedAt: Date.now()
       };
-      
+
       // Prüfe ob Dokument existiert
       const existing = await collection.findOne(special.id).exec();
       if (existing) {
@@ -263,7 +263,7 @@ export async function seedSpecialServices(db, specialServicesData) {
       }
     }
   }
-  
+
   // Prüfe mit findOne() Fallback, da count() möglicherweise nicht funktioniert
   let finalCount = 0;
   try {
@@ -275,25 +275,25 @@ export async function seedSpecialServices(db, specialServicesData) {
       if (doc) finalCount++;
     }
   }
-  
+
   console.log(`✅ ${successCount} von ${specialServicesData.length} Special Services verarbeitet. DB-Count (via count/findOne): ${finalCount}`);
 }
 
 export async function seedFactors(db, factorsData) {
   const collection = db.collections.factors;
-  
+
   const existing = await collection.count().exec();
   if (existing > 0) {
     console.log('Factors bereits vorhanden, überspringe Seeding');
     return;
   }
-  
+
   const docs = factorsData.map(factor => ({
     ...factor,
     createdAt: Date.now(),
     updatedAt: Date.now()
   }));
-  
+
   await collection.bulkInsert(docs);
   console.log(`✅ ${docs.length} Factors gespeichert`);
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useSelector } from 'react-redux';
 import CalculationStepsExplanation from '../CalculationStepsExplanation/CalculationStepsExplanation';
+import DayPlanningDialog from '../DayPlanningDialog/DayPlanningDialog';
 
 // Formatiert einen Betrag als Euro
 const formatCurrency = (amount) => {
@@ -271,6 +272,13 @@ export default function ResultsDisplay() {
             </div>
           );
         })}
+
+        {/* Tagesplanung Dialog - ÜBER der Preisübersicht */}
+        <DayPlanningDialog
+          results={results}
+          customerApproval={customerApproval}
+          companySettings={companySettings}
+        />
 
         {/* Transparente Preisübersicht */}
         <div style={{ marginTop: '30px', padding: '20px', background: '#e3f2fd', borderRadius: '8px' }}>

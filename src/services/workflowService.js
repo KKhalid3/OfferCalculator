@@ -3,15 +3,24 @@ import { MINUTES_PER_DAY } from '../constants';
 
 /**
  * Schritt 12: Sortierung nach Workflow
+ * Sortiert Services nach ihrer workflowOrder für logische Arbeitsreihenfolge
  */
 export async function sortServicesByWorkflow(calculations) {
-  // Services nach Workflow-Order sortieren
-  // (kann aus Service-Daten oder separater Workflow-Order kommen)
-  return [...calculations].sort((a, b) => {
-    // Einfache Sortierung nach Service-ID für jetzt
-    // Später: Workflow-Order aus Datenbank
-    return a.serviceId.localeCompare(b.serviceId);
-  });
+  // Services mit Workflow-Daten anreichern
+  const enrichedCalcs = await Promise.all(
+    calculations.map(async (calc) => {
+      const service = await databaseService.getServiceById(calc.serviceId);
+      return {
+        ...calc,
+        workflowOrder: service?.workflowOrder || 20, // Default: Mitte
+        workflowPhase: service?.workflowPhase || 'beschichtung',
+        workflowExplanation: service?.workflowExplanation || null
+      };
+    })
+  );
+  
+  // Nach workflowOrder sortieren (aufsteigend)
+  return enrichedCalcs.sort((a, b) => a.workflowOrder - b.workflowOrder);
 }
 
 /**

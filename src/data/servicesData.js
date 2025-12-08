@@ -1,6 +1,10 @@
 // Vollständige Leistungsdaten aus Excel-Tabelle
+// Mit Workflow-Reihenfolge und Erklärungen
+
 export const servicesData = [
-    // Global einmalig
+    // ============================================
+    // PHASE: START
+    // ============================================
     {
         id: 'service_baustelleneinrichtung',
         title: 'Baustelleneinrichtung',
@@ -11,20 +15,23 @@ export const servicesData = [
         unit: 'h',
         maxProductivityPerDay: null,
         standardQuantity: 1,
-        standardTime: 45, // 45 min
+        standardTime: 45,
         standardValuePerUnit: 45,
         formula: 'Mindestzeit, sonst Standardmodus (pro Raum/Fläche/Tag)',
         materialStandard: '1,02',
         materialType: 'percent',
-        materialValue: 2, // 1,02 = 2%
+        materialValue: 2,
         waitTime: 0,
         minTime: 45,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        // Workflow
+        workflowOrder: 1,
+        workflowPhase: 'start',
+        workflowExplanation: 'IMMER zuerst: Material bereitstellen, Wege sichern, Baustelle einrichten. Ohne diese Vorbereitung kann keine Arbeit beginnen.',
+        workflowTip: 'Tipp: Ausreichend Zeit einplanen für Anfahrt und Entladen. Bei schwierigen Zugangswegen (Altbau ohne Aufzug) mehr Zeit kalkulieren.'
     },
-
-    // Global am Tag
     {
         id: 'service_mindestzeit_tag',
         title: 'Mindestzeit am Tag',
@@ -35,7 +42,7 @@ export const servicesData = [
         unit: 'h',
         maxProductivityPerDay: null,
         standardQuantity: 1,
-        standardTime: 90, // 1 h 30 min
+        standardTime: 90,
         standardValuePerUnit: 90,
         formula: 'aus dem Onboarding',
         materialStandard: '',
@@ -45,10 +52,16 @@ export const servicesData = [
         minTime: 90,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 2,
+        workflowPhase: 'start',
+        workflowExplanation: 'Mindestzeit die pro Tag anfällt, unabhängig von der eigentlichen Arbeitsmenge.',
+        workflowTip: null
     },
 
-    // Abdecken (Boden)
+    // ============================================
+    // PHASE: VORBEREITUNG
+    // ============================================
     {
         id: 'service_abdecken_boden',
         title: 'Abdecken (Boden)',
@@ -59,150 +72,22 @@ export const servicesData = [
         unit: 'm²',
         maxProductivityPerDay: 110,
         standardQuantity: 15,
-        standardTime: 45, // 45 min
+        standardTime: 45,
         standardValuePerUnit: 3,
         formula: '3,0 min/m² (45 min ÷ 15 m²) – Praxiswert',
         materialStandard: '1,1',
+        materialType: 'percent',
+        materialValue: 10,
         waitTime: 0,
-        minTime: 90, // 1h 30 min
+        minTime: 90,
         efficiencyStart: 60,
         efficiencyCap: 120,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 3,
+        workflowPhase: 'vorbereitung',
+        workflowExplanation: 'FRÜH im Ablauf: Boden schützen BEVOR Farbe, Spachtel oder andere Materialien tropfen können. Muss vor allen "schmutzigen" Arbeiten erledigt sein.',
+        workflowTip: 'Tipp: Malervlies ist wiederverwendbar und schützt besser als dünne Folie. Ränder gut abkleben, sonst kriecht Farbe darunter.'
     },
-
-    // Dübellöcher schließen - wird über Sonderangabe "Dübellöcher" aktiviert
-    {
-        id: 'service_duebelloecher',
-        title: 'Dübellöcher schließen (<10% der Fläche)',
-        parentServiceId: '',
-        serviceType: 'Unterleistung Backend',
-        variant: 'Dübellöcher schließen, nachschleifen und vorbessern',
-        includedIn: [], // NICHT automatisch inkludiert - wird über Sonderangabe aktiviert
-        unit: 'm²',
-        maxProductivityPerDay: 250,
-        standardQuantity: 40,
-        standardTime: 20, // 20 min
-        standardValuePerUnit: 0.5,
-        formula: '0,5 min/m² (20 min / 40 m²)',
-        materialStandard: '1,1',
-        waitTime: 30, // 30 min
-        minTime: 90, // 1h 30 min
-        efficiencyStart: 100,
-        efficiencyCap: 250,
-        efficiencyStepPercent: 1
-    },
-
-    // Teilspachtelung
-    {
-        id: 'service_teilspachtelung',
-        title: 'Teilspachtelung',
-        parentServiceId: '',
-        serviceType: 'Unterleistung Backend',
-        variant: 'punktuell spachteln, schleifen, grundieren',
-        includedIn: ['service_raufaser'],
-        unit: 'm²',
-        maxProductivityPerDay: 180,
-        standardQuantity: 40,
-        standardTime: 510, // 8 h 30 min
-        standardValuePerUnit: 12.75,
-        formula: '12,75 min/m² (510 min ÷ 40 m²)',
-        materialStandard: '+5 %',
-        waitTime: 240, // 0,5 Tage = 4h
-        minTime: null,
-        efficiencyStart: 40, // ab 1 Raum
-        efficiencyCap: 80, // Deckel 2 Räume
-        efficiencyStepPercent: 1
-    },
-
-    // Vollflächenspachtelung
-    {
-        id: 'service_vollflaechenspachtelung',
-        title: 'Vollflächenspachtelung ≤ 1 mm',
-        parentServiceId: '',
-        serviceType: 'Unterleistung Backend',
-        variant: 'vollflächig spachteln, Trocknung, schleifen',
-        includedIn: ['service_tuerfluegel_lackieren', 'service_fensterfluegel_innen', 'service_fensterfluegel_aussen', 'service_malervlies', 'service_mustertapete', 'service_neuanstrich_frisch'],
-        unit: 'm²',
-        maxProductivityPerDay: 70, // Spachtel + 175 Schleifen
-        standardQuantity: 40,
-        standardTime: 480, // 8,0 h
-        standardValuePerUnit: 12,
-        formula: 'Spachtel 4,6h + Schliff 1,8h ≈ 6,4h → 8,0h inkl. Rüstzeit',
-        materialStandard: '+10 %',
-        waitTime: 480, // 1 Tag
-        minTime: null,
-        efficiencyStart: 40,
-        efficiencyCap: 70,
-        efficiencyStepPercent: 1
-    },
-
-    // Zusätzlicher Grundanstrich - wird über Sonderangabe "Verschmutzung/Verfärbung" aktiviert
-    {
-        id: 'service_zusaetzlicher_grundanstrich',
-        title: 'Zusätzlicher Grundanstrich',
-        parentServiceId: '',
-        serviceType: 'Unterleistung Backend',
-        variant: '',
-        includedIn: [], // NICHT automatisch inkludiert - wird über Sonderangabe aktiviert
-        unit: 'm²',
-        maxProductivityPerDay: 180,
-        standardQuantity: 40,
-        standardTime: 160, // 2 h 40 min
-        standardValuePerUnit: 4,
-        formula: '4,0 min/m² (160 min ÷ 40 m²)',
-        materialStandard: '1,2',
-        waitTime: 60, // 1–1,5 h (durchschnittlich 90 min)
-        minTime: null,
-        efficiencyStart: 50,
-        efficiencyCap: 160,
-        efficiencyStepPercent: 1
-    },
-
-    // Isoliergrundierung - wird über Sonderangabe "Nikotinverfärbung" aktiviert
-    {
-        id: 'service_isoliergrundierung',
-        title: 'Isoliergrundierung',
-        parentServiceId: '',
-        serviceType: 'Unterleistung Backend',
-        variant: '',
-        includedIn: [], // NICHT automatisch inkludiert - wird über Sonderangabe aktiviert
-        unit: 'm²',
-        maxProductivityPerDay: 180,
-        standardQuantity: 40,
-        standardTime: 160, // 2 h 40 min
-        standardValuePerUnit: 4,
-        formula: '4,0 min/m² (160 min ÷ 40 m²)',
-        materialStandard: '1,2',
-        waitTime: 90, // 1–1,5 h
-        minTime: null,
-        efficiencyStart: 50,
-        efficiencyCap: 160,
-        efficiencyStepPercent: 1
-    },
-
-    // Grundierung (Standard)
-    {
-        id: 'service_grundierung_standard',
-        title: 'Grundierung (Standard)',
-        parentServiceId: '',
-        serviceType: 'Unterleistung Backend',
-        variant: 'staubfrei, Grund auftragen',
-        includedIn: ['service_raufaser', 'service_malervlies', 'service_mustertapete', 'service_neuanstrich_frisch', 'service_neuanstrich_raufaser', 'service_neuanstrich_malervlies'],
-        unit: 'm²',
-        maxProductivityPerDay: 190, // 180–200 m²/Tag (Durchschnitt)
-        standardQuantity: 40,
-        standardTime: 140, // 2 h 20 min
-        standardValuePerUnit: 3.5,
-        formula: '3,5 min/m² (140 min ÷ 40 m²)',
-        materialStandard: '+5 %',
-        waitTime: 0,
-        minTime: null,
-        efficiencyStart: 45,
-        efficiencyCap: 150,
-        efficiencyStepPercent: 1
-    },
-
-    // Boden wasserfest schützen
     {
         id: 'service_boden_wasserfest',
         title: 'Boden wasserfest schützen',
@@ -213,18 +98,26 @@ export const servicesData = [
         unit: 'm²',
         maxProductivityPerDay: 77,
         standardQuantity: 15,
-        standardTime: 30, // 30 min
+        standardTime: 30,
         standardValuePerUnit: 2,
         formula: '2,0 min/m² (70 % von 3,0 min/m²)',
         materialStandard: '+2 %',
+        materialType: 'percent',
+        materialValue: 2,
         waitTime: 0,
         minTime: null,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 4,
+        workflowPhase: 'vorbereitung',
+        workflowExplanation: 'Bei Nassarbeiten (Tapeten einweichen) ist wasserfester Schutz nötig. Kommt VOR dem Tapeten entfernen.',
+        workflowTip: 'Tipp: Bei empfindlichen Böden (Parkett, Laminat) unbedingt wasserfeste Folie verwenden und Ränder luftdicht verkleben.'
     },
 
-    // Tapeten entfernen
+    // ============================================
+    // PHASE: ABRISS
+    // ============================================
     {
         id: 'service_tapete_entfernen',
         title: 'Tapeten entfernen (Wände + Decken)',
@@ -235,18 +128,186 @@ export const servicesData = [
         unit: 'm²',
         maxProductivityPerDay: 60,
         standardQuantity: 40,
-        standardTime: 330, // 5 h 30 min
+        standardTime: 330,
         standardValuePerUnit: 8.25,
         formula: '8,25 min/m² (330 min ÷ 40 m²)',
         materialStandard: '0,50 €/m²',
-        waitTime: 15, // 15 min
+        materialType: 'fixed',
+        materialValue: 0.5,
+        waitTime: 15,
         minTime: null,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 5,
+        workflowPhase: 'abriss',
+        workflowExplanation: 'Alter Belag muss WEG bevor Neuarbeit beginnen kann. Kommt nach Abdeckarbeiten, aber VOR jeder Untergrundvorbereitung.',
+        workflowTip: 'Tipp: Tapeten gut einweichen (15-20 min), dann lösen sie sich leichter. Mehrere Bahnen gleichzeitig einweichen für effizientes Arbeiten.'
     },
 
-    // Farbliche Grundierung
+    // ============================================
+    // PHASE: UNTERGRUND
+    // ============================================
+    {
+        id: 'service_duebelloecher',
+        title: 'Dübellöcher schließen (<10% der Fläche)',
+        parentServiceId: '',
+        serviceType: 'Unterleistung Backend',
+        variant: 'Dübellöcher schließen, nachschleifen und vorbessern',
+        includedIn: [],
+        unit: 'm²',
+        maxProductivityPerDay: 250,
+        standardQuantity: 40,
+        standardTime: 20,
+        standardValuePerUnit: 0.5,
+        formula: '0,5 min/m² (20 min / 40 m²)',
+        materialStandard: '1,1',
+        materialType: 'percent',
+        materialValue: 10,
+        waitTime: 30,
+        minTime: 90,
+        efficiencyStart: 100,
+        efficiencyCap: 250,
+        efficiencyStepPercent: 1,
+        workflowOrder: 6,
+        workflowPhase: 'untergrund',
+        workflowExplanation: 'Kleine Löcher und Schadstellen VOR dem Spachteln ausbessern. Diese punktuellen Reparaturen müssen trocknen bevor großflächig weitergearbeitet wird.',
+        workflowTip: 'Tipp: Fertigspachtel für kleine Löcher, bei tiefen Löchern in mehreren Schichten arbeiten.'
+    },
+    {
+        id: 'service_teilspachtelung',
+        title: 'Teilspachtelung',
+        parentServiceId: '',
+        serviceType: 'Unterleistung Backend',
+        variant: 'punktuell spachteln, schleifen, grundieren',
+        includedIn: ['service_raufaser'],
+        unit: 'm²',
+        maxProductivityPerDay: 180,
+        standardQuantity: 40,
+        standardTime: 510,
+        standardValuePerUnit: 12.75,
+        formula: '12,75 min/m² (510 min ÷ 40 m²)',
+        materialStandard: '+5 %',
+        materialType: 'percent',
+        materialValue: 5,
+        waitTime: 240,
+        minTime: null,
+        efficiencyStart: 40,
+        efficiencyCap: 80,
+        efficiencyStepPercent: 1,
+        workflowOrder: 7,
+        workflowPhase: 'untergrund',
+        workflowExplanation: 'Punktuelle Ausbesserungen nach dem Dübellöcher schließen. Bei größeren Schäden, aber nicht vollflächig nötig. Hat 4h Trocknungszeit!',
+        workflowTip: 'Tipp: Lieber etwas mehr spachteln als zu wenig – Nachspachteln kostet mehr Zeit als einmal richtig.'
+    },
+    {
+        id: 'service_vollflaechenspachtelung',
+        title: 'Vollflächenspachtelung ≤ 1 mm',
+        parentServiceId: '',
+        serviceType: 'Unterleistung Backend',
+        variant: 'vollflächig spachteln, Trocknung, schleifen',
+        includedIn: ['service_tuerfluegel_lackieren', 'service_fensterfluegel_innen', 'service_fensterfluegel_aussen', 'service_malervlies', 'service_mustertapete', 'service_neuanstrich_frisch'],
+        unit: 'm²',
+        maxProductivityPerDay: 70,
+        standardQuantity: 40,
+        standardTime: 480,
+        standardValuePerUnit: 12,
+        formula: 'Spachtel 4,6h + Schliff 1,8h ≈ 6,4h → 8,0h inkl. Rüstzeit',
+        materialStandard: '+10 %',
+        materialType: 'percent',
+        materialValue: 10,
+        waitTime: 480,
+        minTime: null,
+        efficiencyStart: 40,
+        efficiencyCap: 70,
+        efficiencyStepPercent: 1,
+        workflowOrder: 8,
+        workflowPhase: 'untergrund',
+        workflowExplanation: 'Vollflächiges Glätten des Untergrunds. Kommt NACH punktuellen Reparaturen. Hat 8h (1 Tag) Trocknungszeit – Schleifen erst am nächsten Tag!',
+        workflowTip: 'Tipp: Bei Malervlies und glatten Tapeten unverzichtbar. Die Trocknungszeit ist kritisch – nicht zu früh schleifen!'
+    },
+
+    // ============================================
+    // PHASE: GRUNDIERUNG
+    // ============================================
+    {
+        id: 'service_grundierung_standard',
+        title: 'Grundierung (Standard)',
+        parentServiceId: '',
+        serviceType: 'Unterleistung Backend',
+        variant: 'staubfrei, Grund auftragen',
+        includedIn: ['service_raufaser', 'service_malervlies', 'service_mustertapete', 'service_neuanstrich_frisch', 'service_neuanstrich_raufaser', 'service_neuanstrich_malervlies'],
+        unit: 'm²',
+        maxProductivityPerDay: 190,
+        standardQuantity: 40,
+        standardTime: 140,
+        standardValuePerUnit: 3.5,
+        formula: '3,5 min/m² (140 min ÷ 40 m²)',
+        materialStandard: '+5 %',
+        materialType: 'percent',
+        materialValue: 5,
+        waitTime: 0,
+        minTime: null,
+        efficiencyStart: 45,
+        efficiencyCap: 150,
+        efficiencyStepPercent: 1,
+        workflowOrder: 9,
+        workflowPhase: 'grundierung',
+        workflowExplanation: 'Standard-Grundierung NACH Schleifen. Reguliert die Saugfähigkeit des Untergrunds für gleichmäßiges Ergebnis bei Tapete/Anstrich.',
+        workflowTip: 'Tipp: Bei stark saugenden Untergründen (frischer Putz, Gipskarton) eventuell zweimal grundieren.'
+    },
+    {
+        id: 'service_zusaetzlicher_grundanstrich',
+        title: 'Zusätzlicher Grundanstrich',
+        parentServiceId: '',
+        serviceType: 'Unterleistung Backend',
+        variant: '',
+        includedIn: [],
+        unit: 'm²',
+        maxProductivityPerDay: 180,
+        standardQuantity: 40,
+        standardTime: 160,
+        standardValuePerUnit: 4,
+        formula: '4,0 min/m² (160 min ÷ 40 m²)',
+        materialStandard: '1,2',
+        materialType: 'percent',
+        materialValue: 20,
+        waitTime: 60,
+        minTime: null,
+        efficiencyStart: 50,
+        efficiencyCap: 160,
+        efficiencyStepPercent: 1,
+        workflowOrder: 10,
+        workflowPhase: 'grundierung',
+        workflowExplanation: 'Bei starker Verschmutzung/Verfärbung zusätzlich zur Standardgrundierung. Kommt NACH der Standardgrundierung, VOR dem Anstrich.',
+        workflowTip: 'Tipp: Bei Wasserflecken oder leichten Verfärbungen oft ausreichend. Bei Nikotin besser Isoliergrundierung verwenden.'
+    },
+    {
+        id: 'service_isoliergrundierung',
+        title: 'Isoliergrundierung',
+        parentServiceId: '',
+        serviceType: 'Unterleistung Backend',
+        variant: '',
+        includedIn: [],
+        unit: 'm²',
+        maxProductivityPerDay: 180,
+        standardQuantity: 40,
+        standardTime: 160,
+        standardValuePerUnit: 4,
+        formula: '4,0 min/m² (160 min ÷ 40 m²)',
+        materialStandard: '1,2',
+        materialType: 'percent',
+        materialValue: 20,
+        waitTime: 90,
+        minTime: null,
+        efficiencyStart: 50,
+        efficiencyCap: 160,
+        efficiencyStepPercent: 1,
+        workflowOrder: 11,
+        workflowPhase: 'grundierung',
+        workflowExplanation: 'Isoliergrundierung bei Nikotin/starken Verfärbungen. Muss NACH der Untergrundvorbereitung und VOR dem Anstrich/Tapezieren erfolgen. Sie "sperrt" Verfärbungen ein, damit diese nicht durchschlagen.',
+        workflowTip: '⚠️ WICHTIG: Immer bei Raucher-Wohnungen verwenden! Ohne Isoliergrund schlagen gelbe Nikotinflecken oft nach wenigen Wochen wieder durch. 1,5h Trocknungszeit einplanen.'
+    },
     {
         id: 'service_farbliche_grundierung',
         title: 'Farbliche Grundierung',
@@ -257,18 +318,26 @@ export const servicesData = [
         unit: 'm²',
         maxProductivityPerDay: 180,
         standardQuantity: 40,
-        standardTime: 160, // 2 h 40 min
+        standardTime: 160,
         standardValuePerUnit: 4,
         formula: '4,0 min/m² (160 min ÷ 40 m²)',
         materialStandard: '+20 %',
-        waitTime: 90, // 1–1,5 h
+        materialType: 'percent',
+        materialValue: 20,
+        waitTime: 90,
         minTime: null,
         efficiencyStart: 50,
         efficiencyCap: 160,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 12,
+        workflowPhase: 'grundierung',
+        workflowExplanation: 'Farbige Grundierung bei Mustertapeten – passend zum Tapetenton. Kommt VOR dem Tapezieren, damit bei Stoßkanten keine weißen Stellen durchscheinen.',
+        workflowTip: 'Tipp: Farbton an der dunkelsten Farbe der Tapete orientieren. Bei dunklen Tapeten unverzichtbar!'
     },
 
-    // Kleisterauftrag
+    // ============================================
+    // PHASE: BESCHICHTUNG - TAPETE
+    // ============================================
     {
         id: 'service_kleisterauftrag',
         title: 'Kleisterauftrag',
@@ -279,18 +348,22 @@ export const servicesData = [
         unit: 'm²',
         maxProductivityPerDay: 220,
         standardQuantity: 40,
-        standardTime: 150, // 2h 30 min
+        standardTime: 150,
         standardValuePerUnit: 3.75,
         formula: '3,75 min/m² (½ Zeit von Tapezieren)',
         materialStandard: '+2 %',
+        materialType: 'percent',
+        materialValue: 2,
         waitTime: 0,
         minTime: null,
-        efficiencyStart: 80, // ab 2 Räume
-        efficiencyCap: 240, // Deckel 6 Räume
-        efficiencyStepPercent: 1
+        efficiencyStart: 80,
+        efficiencyCap: 240,
+        efficiencyStepPercent: 1,
+        workflowOrder: 13,
+        workflowPhase: 'beschichtung',
+        workflowExplanation: 'Kleisterauftrag direkt VOR dem Tapezieren. Bei Vliestapeten wird die Wand eingekleistert, bei Papiertapeten die Bahn.',
+        workflowTip: 'Tipp: Bei Vliestapeten direkt auf die Wand kleistern – schneller und sauberer.'
     },
-
-    // Tapezieren (Shop Titel)
     {
         id: 'service_tapezieren',
         title: 'Tapezieren',
@@ -299,20 +372,24 @@ export const servicesData = [
         variant: 'zuschneiden, kleben, andrücken',
         includedIn: [],
         unit: 'm²',
-        maxProductivityPerDay: 110, // 100–120 m²/Tag (Durchschnitt)
+        maxProductivityPerDay: 110,
         standardQuantity: 40,
-        standardTime: 300, // 5,0 h
+        standardTime: 300,
         standardValuePerUnit: 7.5,
         formula: '7,5 min/m² (300 min ÷ 40 m²)',
         materialStandard: '+10 %',
+        materialType: 'percent',
+        materialValue: 10,
         waitTime: 0,
         minTime: null,
         efficiencyStart: 60,
         efficiencyCap: 120,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 14,
+        workflowPhase: 'beschichtung',
+        workflowExplanation: 'Tapezieren kommt NACH allen Grundierungen. Die Tapete wird auf den vorbereiteten, grundierten Untergrund aufgebracht.',
+        workflowTip: null
     },
-
-    // Raufaser (Shop Leistung)
     {
         id: 'service_raufaser',
         title: 'Raufaser',
@@ -327,14 +404,18 @@ export const servicesData = [
         standardValuePerUnit: null,
         formula: '',
         materialStandard: '',
+        materialType: 'none',
+        materialValue: 0,
         waitTime: null,
         minTime: null,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 15,
+        workflowPhase: 'beschichtung',
+        workflowExplanation: 'Raufaser-Tapete – robuste Standardtapete. Kann überstrichen werden.',
+        workflowTip: null
     },
-
-    // Malervlies (Shop Leistung)
     {
         id: 'service_malervlies',
         title: 'Malervlies',
@@ -349,14 +430,18 @@ export const servicesData = [
         standardValuePerUnit: null,
         formula: '',
         materialStandard: '',
+        materialType: 'none',
+        materialValue: 0,
         waitTime: null,
         minTime: null,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 16,
+        workflowPhase: 'beschichtung',
+        workflowExplanation: 'Malervlies – glatte, hochwertige Wandbekleidung. Erfordert glatten Untergrund (Vollflächenspachtelung).',
+        workflowTip: 'Tipp: Bei Malervlies ist die Untergrundvorbereitung kritisch – jede Unebenheit zeichnet sich ab!'
     },
-
-    // Mustertapete (Shop Leistung)
     {
         id: 'service_mustertapete',
         title: 'Mustertapete',
@@ -367,18 +452,26 @@ export const servicesData = [
         unit: 'm²',
         maxProductivityPerDay: 30,
         standardQuantity: 20,
-        standardTime: 330, // 5 h 30 min
+        standardTime: 330,
         standardValuePerUnit: 16.5,
         formula: '16,5 min/m² (330 min ÷ 20 m²)',
         materialStandard: '10 % + Rollenpreis',
+        materialType: 'percent',
+        materialValue: 10,
         waitTime: 0,
         minTime: null,
-        efficiencyStart: null, // keine Eff./Deckel
+        efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 17,
+        workflowPhase: 'beschichtung',
+        workflowExplanation: 'Mustertapete – aufwendiger durch Musterausrichtung. Erfordert farbliche Grundierung bei dunklen Tönen.',
+        workflowTip: 'Tipp: Mehr Verschnitt einplanen (ca. 15-20%) wegen Musterrapport.'
     },
 
-    // Anstrich Decken und Wände (Shop Titel)
+    // ============================================
+    // PHASE: ANSTRICH
+    // ============================================
     {
         id: 'service_anstrich',
         title: 'Anstrich Decken und Wände',
@@ -393,14 +486,18 @@ export const servicesData = [
         standardValuePerUnit: null,
         formula: '',
         materialStandard: '',
+        materialType: 'none',
+        materialValue: 0,
         waitTime: null,
         minTime: null,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 18,
+        workflowPhase: 'anstrich',
+        workflowExplanation: 'Anstrich kommt NACH allen Vorbereitungs- und Grundierungsarbeiten. Bei Tapete: nach dem Tapezieren streichen.',
+        workflowTip: null
     },
-
-    // Überholungsanstrich (Shop Leistung)
     {
         id: 'service_overholungsanstrich',
         title: 'Überholungsanstrich - Streichen (Wände + Decken)',
@@ -411,18 +508,22 @@ export const servicesData = [
         unit: 'm²',
         maxProductivityPerDay: 150,
         standardQuantity: 40,
-        standardTime: 180, // 3,0 h
+        standardTime: 180,
         standardValuePerUnit: 4.5,
         formula: '4,5 min/m² (180 min ÷ 40 m²)',
         materialStandard: '1,2',
-        waitTime: 120, // 60–180 min (Durchschnitt)
-        minTime: 90, // 1h 30 min
+        materialType: 'percent',
+        materialValue: 20,
+        waitTime: 120,
+        minTime: 90,
         efficiencyStart: 60,
         efficiencyCap: 150,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 19,
+        workflowPhase: 'anstrich',
+        workflowExplanation: 'Überholungsanstrich auf vorhandenen Belag. WICHTIG: Decke ZUERST streichen, dann Wände – Tropfen fallen auf ungestrichene Flächen!',
+        workflowTip: 'Tipp: Decke immer zuerst! Tropfen auf frisch gestrichene Wände sind schwer zu korrigieren.'
     },
-
-    // Neuanstrich auf frisch gespachtelt
     {
         id: 'service_neuanstrich_frisch',
         title: 'Streichen auf frisch gespachtelt',
@@ -433,18 +534,22 @@ export const servicesData = [
         unit: 'm²',
         maxProductivityPerDay: 150,
         standardQuantity: 40,
-        standardTime: 360, // Vor 3,5h + Nach 2,5h = 6h
+        standardTime: 360,
         standardValuePerUnit: 9,
         formula: 'Vor 3,5h + Nach 2,5h mit Trocknung',
         materialStandard: '+15 %',
-        waitTime: 1440, // 24 h
+        materialType: 'percent',
+        materialValue: 15,
+        waitTime: 1440,
         minTime: null,
         efficiencyStart: 60,
         efficiencyCap: 150,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 20,
+        workflowPhase: 'anstrich',
+        workflowExplanation: 'Neuanstrich auf frisch gespachteltem Untergrund. Erfordert Voranstrich + 24h Trocknung + Schlussanstrich. Zwei Anstriche sind bei Spachtelflächen Pflicht!',
+        workflowTip: '⚠️ WICHTIG: 24h Trocknungszeit zwischen Vor- und Schlussanstrich! Bei zu frühem Überstreichen Risiko von Abplatzungen.'
     },
-
-    // Neuanstrich auf Raufasertapete
     {
         id: 'service_neuanstrich_raufaser',
         title: 'Streichen auf Raufasertapete',
@@ -455,18 +560,22 @@ export const servicesData = [
         unit: 'm²',
         maxProductivityPerDay: 150,
         standardQuantity: 40,
-        standardTime: 345, // Raufaser 3,5h+2,25h = 5,75h
+        standardTime: 345,
         standardValuePerUnit: 8.625,
         formula: 'Nachstruktur beeinflusst Zeit',
         materialStandard: '+15 %',
-        waitTime: 120, // 60–180 min
+        materialType: 'percent',
+        materialValue: 15,
+        waitTime: 120,
         minTime: null,
         efficiencyStart: 60,
         efficiencyCap: 150,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 21,
+        workflowPhase: 'anstrich',
+        workflowExplanation: 'Anstrich auf Raufasertapete. Kommt NACH dem Tapezieren. Die Struktur erfordert mehr Farbe und sorgfältiges Arbeiten.',
+        workflowTip: 'Tipp: Raufaser saugt stark – ersten Anstrich verdünnen (10% Wasser), zweiter Anstrich unverdünnt.'
     },
-
-    // Neuanstrich auf Malervliestapete
     {
         id: 'service_neuanstrich_malervlies',
         title: 'Streichen auf Malervliestapete',
@@ -477,18 +586,26 @@ export const servicesData = [
         unit: 'm²',
         maxProductivityPerDay: 150,
         standardQuantity: 41,
-        standardTime: 360, // Vlies 3,5h+2,5h = 6h
+        standardTime: 360,
         standardValuePerUnit: 8.78,
         formula: 'Nachstruktur beeinflusst Zeit',
         materialStandard: '+15 %',
-        waitTime: 120, // 60–180 min
+        materialType: 'percent',
+        materialValue: 15,
+        waitTime: 120,
         minTime: null,
         efficiencyStart: 60,
         efficiencyCap: 150,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 22,
+        workflowPhase: 'anstrich',
+        workflowExplanation: 'Anstrich auf Malervlies. Die glatte Oberfläche zeigt jeden Fehler – sauberes Arbeiten wichtig!',
+        workflowTip: 'Tipp: Bei Malervlies hochwertige Farbe verwenden – glatte Flächen zeigen Qualitätsunterschiede deutlich.'
     },
 
-    // Lackieren (Shop Titel)
+    // ============================================
+    // PHASE: LACKIERUNG
+    // ============================================
     {
         id: 'service_lackieren',
         title: 'Lackieren',
@@ -497,20 +614,24 @@ export const servicesData = [
         variant: 'schleifen + grundieren, Trocknung, endlackieren',
         includedIn: [],
         unit: 'Stk',
-        maxProductivityPerDay: 4.5, // 4–5 Stk/Tag (Durchschnitt)
+        maxProductivityPerDay: 4.5,
         standardQuantity: 1,
-        standardTime: 210, // 3,5 h = 1,75h + 1,75h über 2 Tage
+        standardTime: 210,
         standardValuePerUnit: 210,
         formula: '1,75h + 1,75h über 2 Tage',
         materialStandard: '+22 %',
-        waitTime: 360, // 6 h
+        materialType: 'percent',
+        materialValue: 22,
+        waitTime: 360,
         minTime: null,
         efficiencyStart: 3,
         efficiencyCap: 10,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 23,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Lackierarbeiten kommen AM ENDE – empfindliche Oberflächen, die nicht beschädigt werden sollen. Türen/Fenster erst lackieren wenn Wände/Decken fertig sind!',
+        workflowTip: '⚠️ WICHTIG: Lackierung immer am Ende! Frischer Lack ist empfindlich und kann bei anderen Arbeiten beschädigt werden.'
     },
-
-    // Türflügel lackieren (mit Zarge)
     {
         id: 'service_tuerfluegel_lackieren',
         title: 'Türflügel lackieren (mit Zarge)',
@@ -521,18 +642,22 @@ export const servicesData = [
         unit: 'Stk',
         maxProductivityPerDay: 4.5,
         standardQuantity: 2,
-        standardTime: 210, // 3,5 h
+        standardTime: 210,
         standardValuePerUnit: 105,
         formula: '1,75h + 1,75h über 2 Tage',
         materialStandard: '+22 %',
-        waitTime: 420, // 7 h
+        materialType: 'percent',
+        materialValue: 22,
+        waitTime: 420,
         minTime: null,
         efficiencyStart: 3,
         efficiencyCap: 10,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 24,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Türen lackieren am Ende des Projekts. Ablauf: Schleifen → Grundieren → 7h Trocknung → Schlusslack. Oft über 2 Tage verteilt.',
+        workflowTip: 'Tipp: Türblatt abnehmen und waagerecht lackieren – besseres Ergebnis, weniger Läufer.'
     },
-
-    // Türflügel schleifen
     {
         id: 'service_tuerfluegel_schleifen',
         title: 'Türflügel schleifen',
@@ -547,14 +672,18 @@ export const servicesData = [
         standardValuePerUnit: 70,
         formula: '1,75h + 1,75h über 2 Tage',
         materialStandard: '+22 %',
-        waitTime: 480, // 8 h
+        materialType: 'percent',
+        materialValue: 22,
+        waitTime: 0,
         minTime: null,
         efficiencyStart: 3,
         efficiencyCap: 10,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 25,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Erster Schritt beim Türen lackieren: Anschleifen für Haftung des neuen Lacks.',
+        workflowTip: null
     },
-
-    // Türflügel grundieren
     {
         id: 'service_tuerfluegel_grundieren',
         title: 'Türflügel grundieren',
@@ -569,14 +698,18 @@ export const servicesData = [
         standardValuePerUnit: 52.5,
         formula: '1,75h + 1,75h über 2 Tage',
         materialStandard: '+22 %',
-        waitTime: 540, // 9 h
+        materialType: 'percent',
+        materialValue: 22,
+        waitTime: 420,
         minTime: null,
         efficiencyStart: 3,
         efficiencyCap: 10,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 26,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Grundierung nach dem Schleifen. Muss 7h trocknen bevor der Schlusslack aufgetragen wird.',
+        workflowTip: null
     },
-
-    // Türflügel schlusslackieren
     {
         id: 'service_tuerfluegel_schlusslackieren',
         title: 'Türflügel schlusslackieren',
@@ -591,14 +724,18 @@ export const servicesData = [
         standardValuePerUnit: 42,
         formula: '1,75h + 1,75h über 2 Tage',
         materialStandard: '+22 %',
-        waitTime: 600, // 10 h
+        materialType: 'percent',
+        materialValue: 22,
+        waitTime: 480,
         minTime: null,
         efficiencyStart: 3,
         efficiencyCap: 10,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 27,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Letzter Schritt: Schlusslack auftragen. Erst NACH vollständiger Trocknung der Grundierung.',
+        workflowTip: 'Tipp: Nicht zu dick auftragen – lieber zwei dünne Schichten als eine dicke.'
     },
-
-    // Fensterflügel lackieren innen
     {
         id: 'service_fensterfluegel_innen',
         title: 'Fensterflügel lackieren – je Seite innen (mittel < 1,5 m²)',
@@ -607,20 +744,24 @@ export const servicesData = [
         variant: 'abkleben, schleifen, grundieren, lackieren',
         includedIn: [],
         unit: 'Stk',
-        maxProductivityPerDay: 3.5, // 3–4 Stk/Tag
+        maxProductivityPerDay: 3.5,
         standardQuantity: 2,
-        standardTime: 345, // 5h 45 min
+        standardTime: 345,
         standardValuePerUnit: 172.5,
         formula: '72 min/m² (180 min ÷ 2,5 m²)',
         materialStandard: '+22 %',
-        waitTime: 360, // 6 h
+        materialType: 'percent',
+        materialValue: 22,
+        waitTime: 360,
         minTime: null,
         efficiencyStart: 3,
         efficiencyCap: 10,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 28,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Fenster innen lackieren. Aufwendiger als Türen wegen vieler kleiner Flächen und Sprossen.',
+        workflowTip: 'Tipp: Scheiben gut abkleben – Farbe auf Glas ist mühsam zu entfernen.'
     },
-
-    // Fensterflügel innen schleifen
     {
         id: 'service_fensterfluegel_innen_schleifen',
         title: 'Fensterflügel innen schleifen',
@@ -631,18 +772,22 @@ export const servicesData = [
         unit: 'Stk',
         maxProductivityPerDay: 10,
         standardQuantity: 2,
-        standardTime: 90, // 1 h 30 min
+        standardTime: 90,
         standardValuePerUnit: 45,
         formula: '',
         materialStandard: '',
-        waitTime: null,
+        materialType: 'none',
+        materialValue: 0,
+        waitTime: 0,
         minTime: null,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 29,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Fenster schleifen – erster Schritt der Lackierung.',
+        workflowTip: null
     },
-
-    // Fensterflügel innen grundieren
     {
         id: 'service_fensterfluegel_innen_grundieren',
         title: 'Fensterflügel innen grundieren',
@@ -653,18 +798,22 @@ export const servicesData = [
         unit: 'Stk',
         maxProductivityPerDay: 3.5,
         standardQuantity: 2,
-        standardTime: 120, // 2 h
+        standardTime: 120,
         standardValuePerUnit: 60,
         formula: '',
         materialStandard: '',
-        waitTime: null,
+        materialType: 'none',
+        materialValue: 0,
+        waitTime: 360,
         minTime: null,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 30,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Fenster grundieren nach Schleifen. 6h Trocknungszeit.',
+        workflowTip: null
     },
-
-    // Fensterflügel innen schlusslackieren
     {
         id: 'service_fensterfluegel_innen_schlusslackieren',
         title: 'Fensterflügel innen schlusslackieren',
@@ -675,18 +824,22 @@ export const servicesData = [
         unit: 'Stk',
         maxProductivityPerDay: 3.5,
         standardQuantity: 2,
-        standardTime: 135, // 2 h 15 min
+        standardTime: 135,
         standardValuePerUnit: 67.5,
         formula: '',
         materialStandard: '',
-        waitTime: null,
+        materialType: 'none',
+        materialValue: 0,
+        waitTime: 480,
         minTime: null,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 31,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Fenster Schlusslack – nach Trocknung der Grundierung.',
+        workflowTip: null
     },
-
-    // Fensterflügel lackieren außen
     {
         id: 'service_fensterfluegel_aussen',
         title: 'Fensterflügel lackieren – je Seite außen (mittel < 1,5 m²)',
@@ -697,18 +850,22 @@ export const servicesData = [
         unit: 'Stk',
         maxProductivityPerDay: 3.5,
         standardQuantity: 2,
-        standardTime: 210, // 3,5 h
+        standardTime: 210,
         standardValuePerUnit: 105,
         formula: '84 min/m² (210 min ÷ 2,5 m²)',
         materialStandard: '+22 %',
-        waitTime: 360, // 6 h
+        materialType: 'percent',
+        materialValue: 22,
+        waitTime: 360,
         minTime: null,
         efficiencyStart: 3,
         efficiencyCap: 10,
-        efficiencyStepPercent: 1
+        efficiencyStepPercent: 1,
+        workflowOrder: 32,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Fenster außen – stärker beansprucht durch Witterung. Hochwertigerer Lack nötig.',
+        workflowTip: 'Tipp: Wetterfesten Lack verwenden. Nicht bei Regen oder praller Sonne lackieren.'
     },
-
-    // Fensterflügel außen schleifen
     {
         id: 'service_fensterfluegel_aussen_schleifen',
         title: 'Fensterflügel außen schleifen',
@@ -719,18 +876,22 @@ export const servicesData = [
         unit: 'Stk',
         maxProductivityPerDay: null,
         standardQuantity: 2,
-        standardTime: 150, // 2 h 30 min
+        standardTime: 150,
         standardValuePerUnit: 75,
         formula: '',
         materialStandard: '',
-        waitTime: null,
+        materialType: 'none',
+        materialValue: 0,
+        waitTime: 0,
         minTime: null,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 33,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Fenster außen schleifen.',
+        workflowTip: null
     },
-
-    // Fensterflügel außen grundieren
     {
         id: 'service_fensterfluegel_aussen_grundieren',
         title: 'Fensterflügel außen grundieren',
@@ -741,18 +902,22 @@ export const servicesData = [
         unit: 'Stk',
         maxProductivityPerDay: null,
         standardQuantity: 2,
-        standardTime: 135, // 2 h 15 min
+        standardTime: 135,
         standardValuePerUnit: 67.5,
         formula: '',
         materialStandard: '',
-        waitTime: null,
+        materialType: 'none',
+        materialValue: 0,
+        waitTime: 360,
         minTime: null,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 34,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Fenster außen grundieren – Wetterschutz-Grundierung empfohlen.',
+        workflowTip: null
     },
-
-    // Fensterflügel außen schlusslackieren
     {
         id: 'service_fensterfluegel_aussen_schlusslackieren',
         title: 'Fensterflügel außen schlusslackieren',
@@ -763,18 +928,26 @@ export const servicesData = [
         unit: 'Stk',
         maxProductivityPerDay: null,
         standardQuantity: 2,
-        standardTime: 150, // 2 h 30 min
+        standardTime: 150,
         standardValuePerUnit: 75,
         formula: '',
         materialStandard: '',
-        waitTime: null,
+        materialType: 'none',
+        materialValue: 0,
+        waitTime: 480,
         minTime: null,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 35,
+        workflowPhase: 'lackierung',
+        workflowExplanation: 'Fenster außen Schlusslack – wetterfester Lack.',
+        workflowTip: null
     },
 
-    // Aufräumen / Entsorgen
+    // ============================================
+    // PHASE: FINISH
+    // ============================================
     {
         id: 'service_aufraeumen',
         title: 'Aufräumen / Entsorgen',
@@ -785,15 +958,21 @@ export const servicesData = [
         unit: 'm²',
         maxProductivityPerDay: 204,
         standardQuantity: 44,
-        standardTime: 90, // 1,5 h
+        standardTime: 90,
         standardValuePerUnit: 2.25,
         formula: '2,25 min/m² (90 min ÷ 40 m²)',
         materialStandard: '',
+        materialType: 'none',
+        materialValue: 0,
         waitTime: 0,
         minTime: null,
         efficiencyStart: null,
         efficiencyCap: null,
-        efficiencyStepPercent: null
+        efficiencyStepPercent: null,
+        workflowOrder: 36,
+        workflowPhase: 'finish',
+        workflowExplanation: 'IMMER zuletzt: Abdeckungen entfernen, Abfälle entsorgen, Baustelle reinigen. Erst wenn alle Arbeiten abgeschlossen sind!',
+        workflowTip: 'Tipp: Abdeckungen vorsichtig entfernen – Farbspritzer könnten noch nicht ganz trocken sein.'
     }
 ];
 
@@ -810,7 +989,7 @@ export const specialServicesData = [
         inputType: 'Leistungsspezifikation',
         source: 'Onboarding',
         uxDescription: 'Wenn der Kunde im Shop die Leistung Überholungsanstrich auswählt, sind mögliche Sonderleistungen hierzu abzufragen. Hier: sind die Oberflächen verschmutzt oder verfärbt',
-        factor: 1.0 // KEIN Faktor! Ist eine Zusatzleistung (requiredService), keine Erschwernis
+        factor: 1.0
     },
     {
         id: 'special_nikotin',
@@ -823,7 +1002,7 @@ export const specialServicesData = [
         inputType: 'Leistungsspezifikation',
         source: 'Onboarding',
         uxDescription: 'Wenn der Kunde im Shop die Leistung Überholungsanstrich auswählt, sind mögliche Sonderleistungen hierzu abzufragen. Hier: Wurde in dem Raum geraucht',
-        factor: 1.0 // KEIN Faktor! Ist eine Zusatzleistung (requiredService), keine Erschwernis
+        factor: 1.0
     },
     {
         id: 'special_duebelloecher',
@@ -836,7 +1015,7 @@ export const specialServicesData = [
         inputType: 'Leistungsspezifikation',
         source: 'Onboarding',
         uxDescription: 'Wenn der Kunde im Shop die Leistung Überholungsanstrich auswählt, sind mögliche Sonderleistungen hierzu abzufragen. Hier: Sind Dübellöcher in den Wänden zu schließen',
-        factor: 1.0 // Wird bereits als Unterleistung behandelt
+        factor: 1.0
     },
     {
         id: 'special_umraeumen',
@@ -849,7 +1028,19 @@ export const specialServicesData = [
         inputType: 'Objektverwaltung',
         source: 'Global',
         uxDescription: 'hier entsteht nur ein textlicher Platzhalter mit dem Hinweis: Arbeiten werden auf Zeitnachweis tatsächlicher Aufwand ausgeführt und separat abgerechnet',
-        factor: 1.0 // Wird separat abgerechnet
+        factor: 1.0
     }
 ];
 
+// Workflow-Phasen für Anzeige
+export const workflowPhases = {
+    start: { name: 'Start', icon: '🚀', color: '#607D8B', order: 1 },
+    vorbereitung: { name: 'Vorbereitung', icon: '🛡️', color: '#795548', order: 2 },
+    abriss: { name: 'Abriss', icon: '🗑️', color: '#F44336', order: 3 },
+    untergrund: { name: 'Untergrund', icon: '🧱', color: '#FF9800', order: 4 },
+    grundierung: { name: 'Grundierung', icon: '🎨', color: '#9C27B0', order: 5 },
+    beschichtung: { name: 'Beschichtung', icon: '📋', color: '#2196F3', order: 6 },
+    anstrich: { name: 'Anstrich', icon: '🖌️', color: '#4CAF50', order: 7 },
+    lackierung: { name: 'Lackierung', icon: '✨', color: '#E91E63', order: 8 },
+    finish: { name: 'Finish', icon: '🧹', color: '#9E9E9E', order: 9 }
+};

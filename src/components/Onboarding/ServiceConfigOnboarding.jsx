@@ -91,6 +91,13 @@ export default function ServiceConfigOnboarding({ onComplete }) {
         // Material
         materialType: currentService.materialType || "percent",
         materialValue: currentService.materialValue || 15,
+        // Workflow-Reihenfolge
+        workflowOrder: currentService.workflowOrder || 20,
+        workflowPhase: currentService.workflowPhase || "beschichtung",
+        // Unterleistungs-Reihenfolge (nur relevant wenn diese Leistung eine Unterleistung ist)
+        subWorkflowOrder: currentService.subWorkflowOrder || null,
+        subWorkflowTotal: currentService.subWorkflowTotal || null,
+        subWorkflowExplanation: currentService.subWorkflowExplanation || "",
       });
 
       // Lade bereits zugewiesene Unterleistungen
@@ -138,6 +145,13 @@ export default function ServiceConfigOnboarding({ onComplete }) {
           materialType: formData.materialType,
           materialValue: formData.materialValue,
           includedSubServices: selectedSubServices,
+          // Workflow-Reihenfolge
+          workflowOrder: formData.workflowOrder,
+          workflowPhase: formData.workflowPhase,
+          // Unterleistungs-Reihenfolge
+          subWorkflowOrder: formData.subWorkflowOrder,
+          subWorkflowTotal: formData.subWorkflowTotal,
+          subWorkflowExplanation: formData.subWorkflowExplanation,
           configOnboardingCompleted: true,
           materialOnboardingCompleted: true,
         }
@@ -457,7 +471,7 @@ export default function ServiceConfigOnboarding({ onComplete }) {
           </div>
 
           {/* Produktivität */}
-          <div style={{ background: "#fff3e0", padding: "15px", borderRadius: "8px" }}>
+          <div style={{ background: "#fff3e0", padding: "15px", borderRadius: "8px", marginBottom: "20px" }}>
             <h3 style={{ margin: "0 0 15px 0", color: "#e65100", fontSize: "16px" }}>
               🏃 Max. Produktivität
             </h3>
@@ -479,6 +493,73 @@ export default function ServiceConfigOnboarding({ onComplete }) {
                 <span>{currentService.unit}/Tag</span>
               </div>
             </div>
+          </div>
+
+          {/* Workflow-Reihenfolge */}
+          <div style={{ background: "#e3f2fd", padding: "15px", borderRadius: "8px" }}>
+            <h3 style={{ margin: "0 0 15px 0", color: "#1565c0", fontSize: "16px" }}>
+              🔢 Workflow-Reihenfolge
+            </h3>
+            <p style={{ fontSize: "12px", color: "#666", marginBottom: "15px" }}>
+              Die Position dieser Leistung im Arbeitsablauf. Niedrigere Zahlen = früher im Ablauf.
+            </p>
+            
+            <div style={{ marginBottom: "12px" }}>
+              <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+                Workflow-Position:
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <input
+                  type="number"
+                  name="workflowOrder"
+                  value={formData.workflowOrder}
+                  onChange={handleChange}
+                  step="10"
+                  min="1"
+                  max="999"
+                  style={{ width: "80px", padding: "8px" }}
+                />
+                <span style={{ fontSize: "12px", color: "#888" }}>
+                  (Default: {currentService.workflowOrder || 20})
+                </span>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "12px" }}>
+              <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+                Phase:
+              </label>
+              <select
+                name="workflowPhase"
+                value={formData.workflowPhase}
+                onChange={handleChange}
+                style={{ width: "100%", padding: "8px" }}
+              >
+                <option value="start">🚀 Start</option>
+                <option value="vorbereitung">🛡️ Vorbereitung</option>
+                <option value="abriss">🗑️ Abriss</option>
+                <option value="untergrund">🧱 Untergrund</option>
+                <option value="grundierung">🎨 Grundierung</option>
+                <option value="beschichtung">📋 Beschichtung/Tapete</option>
+                <option value="anstrich">🖌️ Anstrich</option>
+                <option value="lackierung">✨ Lackierung</option>
+                <option value="finish">🧹 Finish</option>
+              </select>
+            </div>
+
+            {currentService.workflowExplanation && (
+              <div style={{ 
+                marginTop: "10px",
+                padding: "8px",
+                background: "white",
+                borderRadius: "4px",
+                fontSize: "12px",
+                color: "#555",
+                borderLeft: "3px solid #1565c0"
+              }}>
+                💡 {currentService.workflowExplanation}
+              </div>
+            )}
           </div>
         </div>
 

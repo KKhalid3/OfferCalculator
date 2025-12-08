@@ -76,6 +76,13 @@ export default function SubServicesOnboarding({ onComplete }) {
         // Material
         materialType: currentService.materialType || "percent",
         materialValue: currentService.materialValue || 10,
+        // Workflow-Reihenfolge
+        workflowOrder: currentService.workflowOrder || 20,
+        workflowPhase: currentService.workflowPhase || "beschichtung",
+        // Unterleistungs-Reihenfolge
+        subWorkflowOrder: currentService.subWorkflowOrder || null,
+        subWorkflowTotal: currentService.subWorkflowTotal || null,
+        subWorkflowExplanation: currentService.subWorkflowExplanation || "",
       });
     }
   }, [currentService]);
@@ -105,6 +112,13 @@ export default function SubServicesOnboarding({ onComplete }) {
           maxProductivityPerDay: formData.maxProductivityPerDay,
           materialType: formData.materialType,
           materialValue: formData.materialValue,
+          // Workflow-Reihenfolge
+          workflowOrder: formData.workflowOrder,
+          workflowPhase: formData.workflowPhase,
+          // Unterleistungs-Reihenfolge
+          subWorkflowOrder: formData.subWorkflowOrder,
+          subWorkflowTotal: formData.subWorkflowTotal,
+          subWorkflowExplanation: formData.subWorkflowExplanation,
           subServiceConfigOnboardingCompleted: true,
         }
       })).unwrap();
@@ -498,6 +512,79 @@ export default function SubServicesOnboarding({ onComplete }) {
             </label>
           </div>
         </div>
+      </div>
+
+      {/* Workflow-Reihenfolge Sektion */}
+      <div style={{ 
+        background: "#e3f2fd", 
+        padding: "20px", 
+        borderRadius: "8px", 
+        marginBottom: "20px" 
+      }}>
+        <h3 style={{ margin: "0 0 15px 0", color: "#1565c0", fontSize: "16px" }}>
+          🔢 Workflow-Reihenfolge
+        </h3>
+        <p style={{ fontSize: "12px", color: "#666", marginBottom: "15px" }}>
+          Die Position dieser Unterleistung im gesamten Arbeitsablauf.
+        </p>
+        
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
+          <div>
+            <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+              Workflow-Position:
+            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <input
+                type="number"
+                name="workflowOrder"
+                value={formData.workflowOrder || ""}
+                onChange={handleChange}
+                min="1"
+                max="99"
+                style={{ width: "60px", padding: "8px" }}
+              />
+              <span style={{ fontSize: "12px", color: "#888" }}>
+                (Aktuell: {currentService.workflowOrder || "nicht gesetzt"})
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+              Phase:
+            </label>
+            <select
+              name="workflowPhase"
+              value={formData.workflowPhase || "beschichtung"}
+              onChange={handleChange}
+              style={{ width: "100%", padding: "8px" }}
+            >
+              <option value="start">🚀 Start</option>
+              <option value="vorbereitung">🛡️ Vorbereitung</option>
+              <option value="abriss">🗑️ Abriss</option>
+              <option value="untergrund">🧱 Untergrund</option>
+              <option value="grundierung">🎨 Grundierung</option>
+              <option value="beschichtung">📋 Beschichtung</option>
+              <option value="anstrich">🖌️ Anstrich</option>
+              <option value="lackierung">✨ Lackierung</option>
+              <option value="finish">🧹 Finish</option>
+            </select>
+          </div>
+        </div>
+
+        {currentService.workflowExplanation && (
+          <div style={{ 
+            marginTop: "15px",
+            padding: "10px",
+            background: "white",
+            borderRadius: "4px",
+            fontSize: "12px",
+            color: "#555",
+            borderLeft: "3px solid #1565c0"
+          }}>
+            💡 <strong>Erklärung:</strong> {currentService.workflowExplanation}
+          </div>
+        )}
       </div>
 
       {/* Navigation Buttons */}

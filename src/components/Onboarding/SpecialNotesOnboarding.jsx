@@ -13,7 +13,9 @@ import { databaseService } from "../../services/databaseService";
  */
 export default function SpecialNotesOnboarding({ onComplete }) {
   const dispatch = useDispatch();
-  const specialServices = useSelector((state) => state.settings.specialServices);
+  const specialServices = useSelector(
+    (state) => state.settings.specialServices
+  );
   const services = useSelector((state) => state.services.services);
   const loading = useSelector((state) => state.settings.loading);
 
@@ -166,16 +168,32 @@ export default function SpecialNotesOnboarding({ onComplete }) {
   );
 
   return (
-    <div className="card onboarding-card" style={{ maxWidth: "800px", margin: "0 auto" }}>
+    <div
+      className="card onboarding-card"
+      style={{ maxWidth: "800px", margin: "0 auto" }}
+    >
       {/* Header mit Fortschritt */}
       <div style={{ marginBottom: "20px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: "10px",
+          }}
+        >
           <span>
             Sonderangabe {currentIndex + 1} von {specialServices.length}
           </span>
           <span>{Math.round(progress)}%</span>
         </div>
-        <div style={{ background: "#e0e0e0", borderRadius: "4px", height: "8px", overflow: "hidden" }}>
+        <div
+          style={{
+            background: "#e0e0e0",
+            borderRadius: "4px",
+            height: "8px",
+            overflow: "hidden",
+          }}
+        >
           <div
             style={{
               background: "#ff9800",
@@ -214,18 +232,26 @@ export default function SpecialNotesOnboarding({ onComplete }) {
       </div>
 
       {/* Sonderangabe Header */}
-      <h2 style={{ borderBottom: "2px solid #ff9800", paddingBottom: "10px", marginBottom: "20px" }}>
+      <h2
+        style={{
+          borderBottom: "2px solid #ff9800",
+          paddingBottom: "10px",
+          marginBottom: "20px",
+        }}
+      >
         🔧 {currentSpecialNote.title}
       </h2>
-      
+
       {currentSpecialNote.uxDescription && (
-        <div style={{ 
-          background: "#fff3e0", 
-          padding: "15px", 
-          borderRadius: "8px", 
-          marginBottom: "25px",
-          border: "1px solid #ffe0b2" 
-        }}>
+        <div
+          style={{
+            background: "#fff3e0",
+            padding: "15px",
+            borderRadius: "8px",
+            marginBottom: "25px",
+            border: "1px solid #ffe0b2",
+          }}
+        >
           <p style={{ margin: 0, fontSize: "14px", color: "#e65100" }}>
             ℹ️ {currentSpecialNote.uxDescription}
           </p>
@@ -233,29 +259,48 @@ export default function SpecialNotesOnboarding({ onComplete }) {
       )}
 
       {/* Zwei-Spalten-Layout */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "30px" }}>
-        
+      <div
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "30px" }}
+      >
         {/* Linke Spalte: Betroffene Leistungen */}
         <div>
-          <div style={{ background: "#e3f2fd", padding: "15px", borderRadius: "8px" }}>
-            <h3 style={{ margin: "0 0 15px 0", color: "#1565c0", fontSize: "16px" }}>
+          <div
+            style={{
+              background: "#e3f2fd",
+              padding: "15px",
+              borderRadius: "8px",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0 0 15px 0",
+                color: "#1565c0",
+                fontSize: "16px",
+              }}
+            >
               🎯 Für welche Leistungen relevant?
             </h3>
-            <p style={{ fontSize: "12px", color: "#666", marginBottom: "10px" }}>
-              Wählen Sie die Leistungen, bei denen diese Sonderangabe abgefragt werden soll:
+            <p
+              style={{ fontSize: "12px", color: "#666", marginBottom: "10px" }}
+            >
+              Wählen Sie die Leistungen, bei denen diese Sonderangabe abgefragt
+              werden soll:
             </p>
 
-            <div style={{ 
-              maxHeight: "300px", 
-              overflowY: "auto", 
-              border: "1px solid #ddd", 
-              borderRadius: "4px", 
-              background: "white" 
-            }}>
+            <div
+              style={{
+                maxHeight: "300px",
+                overflowY: "auto",
+                border: "1px solid #ddd",
+                borderRadius: "4px",
+                background: "white",
+              }}
+            >
               {mainServices.map((service) => {
                 const isSelected = formData.affectsService.includes(service.id);
-                const wasOriginallyIncluded = currentSpecialNote.affectsService?.includes(service.id);
-                
+                const wasOriginallyIncluded =
+                  currentSpecialNote.affectsService?.includes(service.id);
+
                 return (
                   <label
                     key={service.id}
@@ -275,18 +320,22 @@ export default function SpecialNotesOnboarding({ onComplete }) {
                       style={{ marginRight: "10px" }}
                     />
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: isSelected ? "bold" : "normal" }}>
+                      <div
+                        style={{ fontWeight: isSelected ? "bold" : "normal" }}
+                      >
                         {service.title}
                       </div>
                     </div>
                     {wasOriginallyIncluded && (
-                      <span style={{ 
-                        fontSize: "10px", 
-                        background: "#e8f5e9", 
-                        padding: "2px 6px", 
-                        borderRadius: "3px", 
-                        color: "#2e7d32" 
-                      }}>
+                      <span
+                        style={{
+                          fontSize: "10px",
+                          background: "#e8f5e9",
+                          padding: "2px 6px",
+                          borderRadius: "3px",
+                          color: "#2e7d32",
+                        }}
+                      >
                         Default
                       </span>
                     )}
@@ -294,7 +343,7 @@ export default function SpecialNotesOnboarding({ onComplete }) {
                 );
               })}
             </div>
-            
+
             <div style={{ marginTop: "10px", fontSize: "12px", color: "#666" }}>
               {formData.affectsService.length} Leistung(en) ausgewählt
             </div>
@@ -304,12 +353,28 @@ export default function SpecialNotesOnboarding({ onComplete }) {
         {/* Rechte Spalte: Zusatzleistung & Faktor */}
         <div>
           {/* Zusatzleistung */}
-          <div style={{ background: "#f3e5f5", padding: "15px", borderRadius: "8px", marginBottom: "20px" }}>
-            <h3 style={{ margin: "0 0 15px 0", color: "#7b1fa2", fontSize: "16px" }}>
+          <div
+            style={{
+              background: "#f3e5f5",
+              padding: "15px",
+              borderRadius: "8px",
+              marginBottom: "20px",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0 0 15px 0",
+                color: "#7b1fa2",
+                fontSize: "16px",
+              }}
+            >
               ➕ Aktiviert Zusatzleistung
             </h3>
-            <p style={{ fontSize: "12px", color: "#666", marginBottom: "10px" }}>
-              Welche Unterleistung wird aktiviert, wenn diese Sonderangabe gewählt wird?
+            <p
+              style={{ fontSize: "12px", color: "#666", marginBottom: "10px" }}
+            >
+              Welche Unterleistung wird aktiviert, wenn diese Sonderangabe
+              gewählt wird?
             </p>
 
             <select
@@ -327,22 +392,31 @@ export default function SpecialNotesOnboarding({ onComplete }) {
               {subServices.map((sub) => (
                 <option key={sub.id} value={sub.id}>
                   {sub.title}
-                  {sub.id === currentSpecialNote.requiredService && " (Default)"}
+                  {sub.id === currentSpecialNote.requiredService &&
+                    " (Default)"}
                 </option>
               ))}
             </select>
 
             {selectedRequiredService && (
-              <div style={{ 
-                marginTop: "10px", 
-                padding: "10px", 
-                background: "#ede7f6", 
-                borderRadius: "4px",
-                fontSize: "13px" 
-              }}>
+              <div
+                style={{
+                  marginTop: "10px",
+                  padding: "10px",
+                  background: "#ede7f6",
+                  borderRadius: "4px",
+                  fontSize: "13px",
+                }}
+              >
                 <strong>Gewählt:</strong> {selectedRequiredService.title}
                 {selectedRequiredService.variant && (
-                  <div style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "#666",
+                      marginTop: "4px",
+                    }}
+                  >
                     {selectedRequiredService.variant}
                   </div>
                 )}
@@ -351,13 +425,21 @@ export default function SpecialNotesOnboarding({ onComplete }) {
           </div>
 
           {/* Hinweis zur Berechnung */}
-          <div style={{ 
-            background: "#e8f5e9", 
-            padding: "15px", 
-            borderRadius: "8px",
-            border: "1px solid #c8e6c9"
-          }}>
-            <h3 style={{ margin: "0 0 10px 0", color: "#2e7d32", fontSize: "16px" }}>
+          <div
+            style={{
+              background: "#e8f5e9",
+              padding: "15px",
+              borderRadius: "8px",
+              border: "1px solid #c8e6c9",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0 0 10px 0",
+                color: "#2e7d32",
+                fontSize: "16px",
+              }}
+            >
               📊 Berechnung
             </h3>
             {selectedRequiredService ? (
@@ -365,17 +447,29 @@ export default function SpecialNotesOnboarding({ onComplete }) {
                 <p style={{ margin: "0 0 12px 0" }}>
                   Wird als <strong>separate Position</strong> kalkuliert:
                 </p>
-                <div style={{ 
-                  background: "#fff", 
-                  padding: "12px", 
-                  borderRadius: "6px",
-                  border: "1px solid #a5d6a7"
-                }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "12px" }}>
+                <div
+                  style={{
+                    background: "#fff",
+                    padding: "12px",
+                    borderRadius: "6px",
+                    border: "1px solid #a5d6a7",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "8px",
+                      fontSize: "12px",
+                    }}
+                  >
                     {selectedRequiredService.standardValuePerUnit && (
                       <div>
                         <span style={{ color: "#666" }}>Zeit/Einheit:</span>{" "}
-                        <strong>{selectedRequiredService.standardValuePerUnit} min/{selectedRequiredService.unit || "m²"}</strong>
+                        <strong>
+                          {selectedRequiredService.standardValuePerUnit} min/
+                          {selectedRequiredService.unit || "m²"}
+                        </strong>
                       </div>
                     )}
                     {selectedRequiredService.minTime && (
@@ -393,24 +487,40 @@ export default function SpecialNotesOnboarding({ onComplete }) {
                     {selectedRequiredService.materialStandard && (
                       <div>
                         <span style={{ color: "#666" }}>Material:</span>{" "}
-                        <strong>{selectedRequiredService.materialStandard}</strong>
+                        <strong>
+                          {selectedRequiredService.materialStandard}
+                        </strong>
                       </div>
                     )}
                     {selectedRequiredService.efficiencyStart && (
                       <div>
                         <span style={{ color: "#666" }}>Effizienz ab:</span>{" "}
-                        <strong>{selectedRequiredService.efficiencyStart} {selectedRequiredService.unit || "m²"}</strong>
+                        <strong>
+                          {selectedRequiredService.efficiencyStart}{" "}
+                          {selectedRequiredService.unit || "m²"}
+                        </strong>
                       </div>
                     )}
                     {selectedRequiredService.efficiencyCap && (
                       <div>
                         <span style={{ color: "#666" }}>Effizienz-Deckel:</span>{" "}
-                        <strong>{selectedRequiredService.efficiencyCap} {selectedRequiredService.unit || "m²"}</strong>
+                        <strong>
+                          {selectedRequiredService.efficiencyCap}{" "}
+                          {selectedRequiredService.unit || "m²"}
+                        </strong>
                       </div>
                     )}
                   </div>
                   {selectedRequiredService.formula && (
-                    <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px dashed #c8e6c9", fontSize: "11px", color: "#666" }}>
+                    <div
+                      style={{
+                        marginTop: "10px",
+                        paddingTop: "10px",
+                        borderTop: "1px dashed #c8e6c9",
+                        fontSize: "11px",
+                        color: "#666",
+                      }}
+                    >
                       <em>Formel: {selectedRequiredService.formula}</em>
                     </div>
                   )}
@@ -418,8 +528,9 @@ export default function SpecialNotesOnboarding({ onComplete }) {
               </div>
             ) : (
               <p style={{ margin: 0, fontSize: "13px", color: "#1b5e20" }}>
-                Diese Sonderangabe hat keine Zusatzleistung. Sie dient nur als <strong>Information</strong> und 
-                wird ggf. separat nach tatsächlichem Aufwand abgerechnet.
+                Diese Sonderangabe hat keine Zusatzleistung. Sie dient nur als{" "}
+                <strong>Information</strong> und wird ggf. separat nach
+                tatsächlichem Aufwand abgerechnet.
               </p>
             )}
           </div>
@@ -427,7 +538,13 @@ export default function SpecialNotesOnboarding({ onComplete }) {
       </div>
 
       {/* Navigation Buttons */}
-      <div style={{ marginTop: "30px", display: "flex", justifyContent: "space-between" }}>
+      <div
+        style={{
+          marginTop: "30px",
+          display: "flex",
+          justifyContent: "space-between",
+        }}
+      >
         <div style={{ display: "flex", gap: "10px" }}>
           <button
             type="button"
@@ -460,4 +577,3 @@ export default function SpecialNotesOnboarding({ onComplete }) {
     </div>
   );
 }
-

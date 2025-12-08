@@ -40,10 +40,21 @@ export const serviceSchema = {
     configOnboardingCompleted: { type: ['boolean', 'null'] }, // Ob Hauptleistungs-Konfiguration abgeschlossen
     subServiceConfigOnboardingCompleted: { type: ['boolean', 'null'] }, // Ob Unterleistungs-Konfiguration abgeschlossen
 
+    // === Workflow-Reihenfolge ===
+    workflowOrder: { type: ['number', 'null'] }, // Position im Arbeitsablauf (1, 2, 3, ...)
+    workflowPhase: { type: ['string', 'null'] }, // Phase: start, vorbereitung, abriss, untergrund, grundierung, beschichtung, anstrich, lackierung, finish
+    workflowExplanation: { type: ['string', 'null'] }, // Erklärung warum diese Position
+    workflowTip: { type: ['string', 'null'] }, // Praxis-Tipp für den Anwender
+    
+    // === Unterleistungs-Reihenfolge ===
+    subWorkflowOrder: { type: ['number', 'null'] }, // Position innerhalb der Hauptleistung (1, 2, 3, ...)
+    subWorkflowTotal: { type: ['number', 'null'] }, // Gesamtanzahl Schritte in der Hauptleistung
+    subWorkflowExplanation: { type: ['string', 'null'] }, // Erklärung des Schritts innerhalb der Hauptleistung
+
     createdAt: { type: 'number' },
     updatedAt: { type: 'number' }
   },
   required: ['id', 'title', 'serviceType', 'unit'],
-  indexes: ['parentServiceId', 'serviceType', 'includedIn']
+  indexes: ['parentServiceId', 'serviceType', 'includedIn', 'workflowOrder']
 };
 
