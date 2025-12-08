@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchServices, updateServiceConfig } from "../../store/slices/servicesSlice";
+import { workflowPhases } from "../../data/servicesData";
 
 /**
  * Unterleistungen-Onboarding
@@ -559,15 +560,11 @@ export default function SubServicesOnboarding({ onComplete }) {
               onChange={handleChange}
               style={{ width: "100%", padding: "8px" }}
             >
-              <option value="start">🚀 Start</option>
-              <option value="vorbereitung">🛡️ Vorbereitung</option>
-              <option value="abriss">🗑️ Abriss</option>
-              <option value="untergrund">🧱 Untergrund</option>
-              <option value="grundierung">🎨 Grundierung</option>
-              <option value="beschichtung">📋 Beschichtung</option>
-              <option value="anstrich">🖌️ Anstrich</option>
-              <option value="lackierung">✨ Lackierung</option>
-              <option value="finish">🧹 Finish</option>
+              {Object.entries(workflowPhases).map(([key, phase]) => (
+                <option key={key} value={key}>
+                  {phase.icon} {phase.name} ({phase.range})
+                </option>
+              ))}
             </select>
           </div>
         </div>

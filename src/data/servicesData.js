@@ -1034,13 +1034,13 @@ export const specialServicesData = [
 
 // Workflow-Phasen für Anzeige
 export const workflowPhases = {
-    start: { name: 'Start', icon: '🚀', color: '#607D8B', order: 1 },
-    vorbereitung: { name: 'Vorbereitung', icon: '🛡️', color: '#795548', order: 2 },
-    abriss: { name: 'Abriss', icon: '🗑️', color: '#F44336', order: 3 },
-    untergrund: { name: 'Untergrund', icon: '🧱', color: '#FF9800', order: 4 },
-    grundierung: { name: 'Grundierung', icon: '🎨', color: '#9C27B0', order: 5 },
-    beschichtung: { name: 'Beschichtung', icon: '📋', color: '#2196F3', order: 6 },
-    anstrich: { name: 'Anstrich', icon: '🖌️', color: '#4CAF50', order: 7 },
-    lackierung: { name: 'Lackierung', icon: '✨', color: '#E91E63', order: 8 },
-    finish: { name: 'Finish', icon: '🧹', color: '#9E9E9E', order: 9 }
+    start: { name: 'Start', icon: '🚀', color: '#607D8B', order: 1, range: '1-2' },
+    vorbereitung: { name: 'Vorbereitung', icon: '🛡️', color: '#795548', order: 2, range: '3-4' },
+    abriss: { name: 'Abriss', icon: '🗑️', color: '#F44336', order: 3, range: '5' },
+    untergrund: { name: 'Untergrund', icon: '🧱', color: '#FF9800', order: 4, range: '6-8' },
+    grundierung: { name: 'Grundierung', icon: '🎨', color: '#9C27B0', order: 5, range: '9-12' },
+    beschichtung: { name: 'Beschichtung', icon: '📋', color: '#2196F3', order: 6, range: '13-17' },
+    anstrich: { name: 'Anstrich', icon: '🖌️', color: '#4CAF50', order: 7, range: '18-22' },
+    lackierung: { name: 'Lackierung', icon: '✨', color: '#E91E63', order: 8, range: '23-35' },
+    finish: { name: 'Finish', icon: '🧹', color: '#9E9E9E', order: 9, range: '36+' }
 };
