@@ -17,15 +17,22 @@ export async function calculateObjectQuantities(object) {
   const quantityFactor = factors.find(f => f.category === 'Mengen')?.factor || 1;
   const serviceFactor = factors.find(f => f.category === 'Leistung')?.factor || 1;
   
+  // Raumform-Faktor (L-förmig = 1.4x mehr Umfang bei gleicher Grundfläche)
+  const roomShapeFactor = object.roomShapeFactor || 1;
+  
+  // Kombinierter Umfang-Faktor (Raumtyp + Raumform)
+  const combinedQuantityFactor = quantityFactor * roomShapeFactor;
+  
   // Schritt 6: Wandfläche mit Faktor
-  const wallArea = calculateWallAreaWithFactor(perimeter, object.height, quantityFactor);
+  const wallArea = calculateWallAreaWithFactor(perimeter, object.height, combinedQuantityFactor);
   
   return {
     ceilingArea,
-    perimeter: perimeter * quantityFactor, // Angepasster Umfang
+    perimeter: perimeter * combinedQuantityFactor, // Angepasster Umfang
     wallArea,
-    quantityFactor,
-    serviceFactor
+    quantityFactor: combinedQuantityFactor,
+    serviceFactor,
+    roomShapeFactor
   };
 }
 

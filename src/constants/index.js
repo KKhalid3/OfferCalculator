@@ -13,6 +13,11 @@ export const OBJECT_TYPES = [
   'Andere'
 ];
 
+export const ROOM_SHAPES = [
+  { id: 'standard', name: 'Standard (rechteckig)', factor: 1.0 },
+  { id: 'l_shape', name: 'L-förmig', factor: 1.4 }
+];
+
 export const SERVICE_TYPES = {
   SHOP_TITLE: 'Shop Titel Leistung',
   SHOP_SERVICE: 'Shop Leistung',
