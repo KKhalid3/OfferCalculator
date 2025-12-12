@@ -26,8 +26,7 @@ export default function CompanyOnboarding({ onComplete }) {
     minHoursPerEmployee: 6,
     maxEfficiencyLossPercent: 10,
     allowParallelRoomWork: true,
-    // Überstunden & Task-Aufteilung
-    maxOvertimePercent: 15,
+    // Task-Aufteilung
     minTaskSplitTime: 60,
   });
 
@@ -57,8 +56,7 @@ export default function CompanyOnboarding({ onComplete }) {
         minHoursPerEmployee: settings.minHoursPerEmployee || 6,
         maxEfficiencyLossPercent: settings.maxEfficiencyLossPercent || 10,
         allowParallelRoomWork: settings.allowParallelRoomWork ?? true,
-        // Überstunden & Task-Aufteilung
-        maxOvertimePercent: settings.maxOvertimePercent ?? 15,
+        // Task-Aufteilung
         minTaskSplitTime: settings.minTaskSplitTime ?? 60,
       });
     }
@@ -91,8 +89,7 @@ export default function CompanyOnboarding({ onComplete }) {
       minHoursPerEmployee: formData.minHoursPerEmployee,
       maxEfficiencyLossPercent: formData.maxEfficiencyLossPercent,
       allowParallelRoomWork: formData.allowParallelRoomWork,
-      // Überstunden & Task-Aufteilung
-      maxOvertimePercent: formData.maxOvertimePercent,
+      // Task-Aufteilung
       minTaskSplitTime: formData.minTaskSplitTime,
       onboardingCompleted: true,
     };
@@ -376,36 +373,14 @@ export default function CompanyOnboarding({ onComplete }) {
           </div>
         </div>
 
-        {/* Überstunden & Task-Aufteilung */}
+        {/* Task-Aufteilung */}
         <div className="form-group" style={{ marginTop: "30px", paddingTop: "20px", borderTop: "1px solid #eee" }}>
-          <h3 style={{ margin: "0 0 15px 0", fontSize: "16px", color: "#333" }}>⏰ Überstunden & Task-Aufteilung</h3>
+          <h3 style={{ margin: "0 0 15px 0", fontSize: "16px", color: "#333" }}>📋 Task-Aufteilung</h3>
           <p style={{ color: "#666", fontSize: "13px", marginBottom: "15px" }}>
-            Definieren Sie, wie mit Überstunden und der Aufteilung von Arbeiten auf mehrere Tage umgegangen werden soll.
+            Definieren Sie, wie mit der Aufteilung von Arbeiten auf mehrere Tage umgegangen werden soll.
           </p>
           
           <div style={{ display: "grid", gap: "20px" }}>
-            {/* Max. Überstunden */}
-            <div>
-              <label style={{ display: "block", marginBottom: "5px" }}>
-                Maximale Überstunden-Toleranz:
-              </label>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <input
-                  type="number"
-                  name="maxOvertimePercent"
-                  value={formData.maxOvertimePercent}
-                  onChange={handleChange}
-                  min="0"
-                  max="50"
-                  style={{ width: "80px" }}
-                />
-                <span>%</span>
-              </div>
-              <small style={{ color: "#888" }}>
-                Bei 8h Arbeitstag und 15%: Max. 9:12h erlaubt. Kleine Rest-Arbeiten werden lieber heute abgeschlossen.
-              </small>
-            </div>
-            
             {/* Mindest-Restzeit für Aufteilung */}
             <div>
               <label style={{ display: "block", marginBottom: "5px" }}>
@@ -431,7 +406,7 @@ export default function CompanyOnboarding({ onComplete }) {
             
             {/* Erklärung */}
             <div style={{ background: "#f8f9fa", padding: "12px", borderRadius: "6px", fontSize: "13px", color: "#555" }}>
-              <strong>Beispiel:</strong> Bei 7:53h Arbeit und 7 Minuten Rest-Task → Statt Tag 2 mit nur 7 Minuten wird Tag 1 auf 8:00h verlängert.
+              <strong>Beispiel:</strong> Bei 60 Min. Einstellung → Restarbeiten unter 1 Stunde werden am selben Tag abgeschlossen statt einen neuen Tag zu beginnen.
             </div>
           </div>
         </div>

@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { fetchServices, updateServiceConfig } from "../../store/slices/servicesSlice";
+import {
+  fetchServices,
+  updateServiceConfig,
+} from "../../store/slices/servicesSlice";
 import { workflowPhases } from "../../data/servicesData";
 
 /**
@@ -10,7 +13,7 @@ import { workflowPhases } from "../../data/servicesData";
  * - Effizienzwerte (efficiencyStart, efficiencyCap, efficiencyStepPercent)
  * - Produktivität (maxProductivityPerDay)
  * - Material (materialType, materialValue)
- * 
+ *
  * WICHTIG: Dieses Onboarding muss VOR dem Hauptleistungen-Onboarding durchgeführt werden,
  * damit die Unterleistungen danach mit den Hauptleistungen verknüpft werden können.
  */
@@ -23,18 +26,22 @@ export default function SubServicesOnboarding({ onComplete }) {
   const [formData, setFormData] = useState({});
 
   // Nur REINE Unterleistungen für das Onboarding (22 Stück erwartet)
-  // Services die AUCH "Shop Leistung" sind (Malervlies, Raufaser, Tapeten entfernen), 
+  // Services die AUCH "Shop Leistung" sind (Malervlies, Raufaser, Tapeten entfernen),
   // werden im Hauptleistungen-Onboarding behandelt
   const subServices = useMemo(() => {
     // Sicherheitscheck: Wenn zu wenige Services im State, könnte ein Problem vorliegen
     if (services.length < 20) {
-      console.warn(`⚠️ Nur ${services.length} Services im State (erwartet mindestens 36)!`);
+      console.warn(
+        `⚠️ Nur ${services.length} Services im State (erwartet mindestens 36)!`
+      );
     }
-    
+
     const filtered = services
       .filter((s) => {
         if (!s.serviceType) {
-          console.warn(`⚠️ Service ohne serviceType gefiltert: ${s.id} - ${s.title}`);
+          console.warn(
+            `⚠️ Service ohne serviceType gefiltert: ${s.id} - ${s.title}`
+          );
           return false;
         }
         const isUnterleistung = s.serviceType.includes("Unterleistung Backend");
@@ -43,13 +50,25 @@ export default function SubServicesOnboarding({ onComplete }) {
         return isUnterleistung && !isShopLeistung;
       })
       .sort((a, b) => a.title.localeCompare(b.title));
-    
-    console.log(`📎 Reine Unterleistungen: ${filtered.length} (erwartet: 22) aus ${services.length} total Services`);
+
+    console.log(
+      `📎 Reine Unterleistungen: ${filtered.length} (erwartet: 22) aus ${services.length} total Services`
+    );
     if (filtered.length > 0) {
-      console.log('📎 Erste 3:', filtered.slice(0, 3).map(s => s.title).join(', '));
+      console.log(
+        "📎 Erste 3:",
+        filtered
+          .slice(0, 3)
+          .map((s) => s.title)
+          .join(", ")
+      );
     } else if (services.length > 0) {
-      console.error(`❌ KRITISCH: Keine Unterleistungen gefunden, obwohl ${services.length} Services im State sind!`);
-      console.log('📎 Service-Typen:', [...new Set(services.map(s => s.serviceType))]);
+      console.error(
+        `❌ KRITISCH: Keine Unterleistungen gefunden, obwohl ${services.length} Services im State sind!`
+      );
+      console.log("📎 Service-Typen:", [
+        ...new Set(services.map((s) => s.serviceType)),
+      ]);
     }
     return filtered;
   }, [services]);
@@ -80,6 +99,8 @@ export default function SubServicesOnboarding({ onComplete }) {
         // Workflow-Reihenfolge
         workflowOrder: currentService.workflowOrder || 20,
         workflowPhase: currentService.workflowPhase || "beschichtung",
+        // Stauberzeugung
+        createsDust: currentService.createsDust || false,
         // Unterleistungs-Reihenfolge
         subWorkflowOrder: currentService.subWorkflowOrder || null,
         subWorkflowTotal: currentService.subWorkflowTotal || null,
@@ -101,30 +122,38 @@ export default function SubServicesOnboarding({ onComplete }) {
 
     try {
       // Speichere alle Werte über Redux (aktualisiert auch den State!)
-      await dispatch(updateServiceConfig({
-        serviceId: currentService.id,
-        config: {
-          standardValuePerUnit: formData.standardValuePerUnit,
-          minTime: formData.minTime,
-          waitTime: formData.waitTime,
-          efficiencyStart: formData.efficiencyStart,
-          efficiencyCap: formData.efficiencyCap,
-          efficiencyStepPercent: formData.efficiencyStepPercent,
-          maxProductivityPerDay: formData.maxProductivityPerDay,
-          materialType: formData.materialType,
-          materialValue: formData.materialValue,
-          // Workflow-Reihenfolge
-          workflowOrder: formData.workflowOrder,
-          workflowPhase: formData.workflowPhase,
-          // Unterleistungs-Reihenfolge
-          subWorkflowOrder: formData.subWorkflowOrder,
-          subWorkflowTotal: formData.subWorkflowTotal,
-          subWorkflowExplanation: formData.subWorkflowExplanation,
-          subServiceConfigOnboardingCompleted: true,
-        }
-      })).unwrap();
+      await dispatch(
+        updateServiceConfig({
+          serviceId: currentService.id,
+          config: {
+            standardValuePerUnit: formData.standardValuePerUnit,
+            minTime: formData.minTime,
+            waitTime: formData.waitTime,
+            efficiencyStart: formData.efficiencyStart,
+            efficiencyCap: formData.efficiencyCap,
+            efficiencyStepPercent: formData.efficiencyStepPercent,
+            maxProductivityPerDay: formData.maxProductivityPerDay,
+            materialType: formData.materialType,
+            materialValue: formData.materialValue,
+            // Workflow-Reihenfolge
+            workflowOrder: formData.workflowOrder,
+            workflowPhase: formData.workflowPhase,
+            // Stauberzeugung
+            createsDust: formData.createsDust,
+            // Unterleistungs-Reihenfolge
+            subWorkflowOrder: formData.subWorkflowOrder,
+            subWorkflowTotal: formData.subWorkflowTotal,
+            subWorkflowExplanation: formData.subWorkflowExplanation,
+            subServiceConfigOnboardingCompleted: true,
+          },
+        })
+      ).unwrap();
 
-      console.log(`✅ Unterleistung ${currentService.id} gespeichert, gehe zu Index ${currentIndex + 1}`);
+      console.log(
+        `✅ Unterleistung ${currentService.id} gespeichert, gehe zu Index ${
+          currentIndex + 1
+        }`
+      );
 
       // WICHTIG: Redux State wird bereits durch updateServiceConfig.fulfilled aktualisiert!
       // KEIN fetchServices() nötig - das würde den State möglicherweise mit zu wenigen Services überschreiben
@@ -198,9 +227,10 @@ export default function SubServicesOnboarding({ onComplete }) {
   }
 
   // Prüfe ob Default-Werte vorhanden sind
-  const hasDefaultValues = currentService.standardValuePerUnit > 0 || 
-                           currentService.minTime > 0 || 
-                           currentService.waitTime > 0;
+  const hasDefaultValues =
+    currentService.standardValuePerUnit > 0 ||
+    currentService.minTime > 0 ||
+    currentService.waitTime > 0;
 
   return (
     <div className="card onboarding-card">
@@ -260,7 +290,8 @@ export default function SubServicesOnboarding({ onComplete }) {
               <option key={service.id} value={index}>
                 {service.subServiceConfigOnboardingCompleted ? "✅ " : "⚪ "}
                 {index + 1}. {service.title}
-                {service.variant ? ` (${service.variant})` : ""} ({service.unit})
+                {service.variant ? ` (${service.variant})` : ""} ({service.unit}
+                )
               </option>
             ))}
           </select>
@@ -280,7 +311,8 @@ export default function SubServicesOnboarding({ onComplete }) {
         >
           <strong>✅ Alle Unterleistungen sind bereits konfiguriert!</strong>
           <p style={{ margin: "5px 0 0 0", fontSize: "14px" }}>
-            Sie können Einstellungen überprüfen oder ändern, oder direkt zu den Hauptleistungen gehen.
+            Sie können Einstellungen überprüfen oder ändern, oder direkt zu den
+            Hauptleistungen gehen.
           </p>
           <button
             onClick={onComplete}
@@ -315,7 +347,8 @@ export default function SubServicesOnboarding({ onComplete }) {
             border: "1px solid #A5D6A7",
           }}
         >
-          ✨ <strong>Default-Werte aus Stammdaten geladen</strong> - Sie können diese anpassen oder übernehmen.
+          ✨ <strong>Default-Werte aus Stammdaten geladen</strong> - Sie können
+          diese anpassen oder übernehmen.
         </div>
       )}
 
@@ -453,7 +486,14 @@ export default function SubServicesOnboarding({ onComplete }) {
         <div className="form-section">
           <h3>📦 Material-Zuschlag</h3>
           <div className="form-group">
-            <label style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                marginBottom: "10px",
+              }}
+            >
               <input
                 type="radio"
                 name="materialType"
@@ -463,7 +503,14 @@ export default function SubServicesOnboarding({ onComplete }) {
               />
               Kein Material
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                marginBottom: "10px",
+              }}
+            >
               <input
                 type="radio"
                 name="materialType"
@@ -473,7 +520,9 @@ export default function SubServicesOnboarding({ onComplete }) {
               />
               Prozent auf Lohnkosten
               {formData.materialType === "percent" && (
-                <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                <span
+                  style={{ display: "flex", alignItems: "center", gap: "5px" }}
+                >
                   <input
                     type="number"
                     name="materialValue"
@@ -487,7 +536,9 @@ export default function SubServicesOnboarding({ onComplete }) {
                 </span>
               )}
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <label
+              style={{ display: "flex", alignItems: "center", gap: "10px" }}
+            >
               <input
                 type="radio"
                 name="materialType"
@@ -497,7 +548,9 @@ export default function SubServicesOnboarding({ onComplete }) {
               />
               Fester Betrag pro {currentService.unit}
               {formData.materialType === "fixed" && (
-                <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                <span
+                  style={{ display: "flex", alignItems: "center", gap: "5px" }}
+                >
                   <input
                     type="number"
                     name="materialValue"
@@ -516,22 +569,38 @@ export default function SubServicesOnboarding({ onComplete }) {
       </div>
 
       {/* Workflow-Reihenfolge Sektion */}
-      <div style={{ 
-        background: "#e3f2fd", 
-        padding: "20px", 
-        borderRadius: "8px", 
-        marginBottom: "20px" 
-      }}>
-        <h3 style={{ margin: "0 0 15px 0", color: "#1565c0", fontSize: "16px" }}>
+      <div
+        style={{
+          background: "#e3f2fd",
+          padding: "20px",
+          borderRadius: "8px",
+          marginBottom: "20px",
+        }}
+      >
+        <h3
+          style={{ margin: "0 0 15px 0", color: "#1565c0", fontSize: "16px" }}
+        >
           🔢 Workflow-Reihenfolge
         </h3>
         <p style={{ fontSize: "12px", color: "#666", marginBottom: "15px" }}>
           Die Position dieser Unterleistung im gesamten Arbeitsablauf.
         </p>
-        
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "15px",
+          }}
+        >
           <div>
-            <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: "13px",
+                marginBottom: "4px",
+              }}
+            >
               Workflow-Position:
             </label>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -551,7 +620,13 @@ export default function SubServicesOnboarding({ onComplete }) {
           </div>
 
           <div>
-            <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: "13px",
+                marginBottom: "4px",
+              }}
+            >
               Phase:
             </label>
             <select
@@ -570,18 +645,69 @@ export default function SubServicesOnboarding({ onComplete }) {
         </div>
 
         {currentService.workflowExplanation && (
-          <div style={{ 
-            marginTop: "15px",
-            padding: "10px",
-            background: "white",
-            borderRadius: "4px",
-            fontSize: "12px",
-            color: "#555",
-            borderLeft: "3px solid #1565c0"
-          }}>
+          <div
+            style={{
+              marginTop: "15px",
+              padding: "10px",
+              background: "white",
+              borderRadius: "4px",
+              fontSize: "12px",
+              color: "#555",
+              borderLeft: "3px solid #1565c0",
+            }}
+          >
             💡 <strong>Erklärung:</strong> {currentService.workflowExplanation}
           </div>
         )}
+
+        {/* Stauberzeugung */}
+        <div
+          style={{
+            marginTop: "15px",
+            padding: "12px",
+            background: formData.createsDust ? "#fff3e0" : "white",
+            borderRadius: "4px",
+            border: formData.createsDust
+              ? "1px solid #ff9800"
+              : "1px solid #e0e0e0",
+          }}
+        >
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              name="createsDust"
+              checked={formData.createsDust || false}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  createsDust: e.target.checked,
+                }))
+              }
+              style={{ width: "18px", height: "18px" }}
+            />
+            <span style={{ fontSize: "14px", fontWeight: "500" }}>
+              🌫️ Erzeugt Staub
+            </span>
+          </label>
+          <p
+            style={{
+              fontSize: "11px",
+              color: "#666",
+              margin: "8px 0 0 28px",
+            }}
+          >
+            z.B. Schleifen, Spachteln – stauberzeugende Arbeiten dürfen nicht
+            während Trocknungsphasen (Lackierung) im gleichen Raum ausgeführt
+            werden.
+          </p>
+        </div>
       </div>
 
       {/* Navigation Buttons */}
@@ -628,4 +754,3 @@ export default function SubServicesOnboarding({ onComplete }) {
     </div>
   );
 }
-

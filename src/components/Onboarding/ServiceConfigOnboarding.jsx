@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { fetchServices, updateServiceConfig } from "../../store/slices/servicesSlice";
+import {
+  fetchServices,
+  updateServiceConfig,
+} from "../../store/slices/servicesSlice";
 import { workflowPhases } from "../../data/servicesData";
 
 /**
@@ -25,13 +28,17 @@ export default function ServiceConfigOnboarding({ onComplete }) {
   // Davon 3 gemischt: Malervlies, Raufaser, Tapeten entfernen (= auch Unterleistung)
   // NICHT "Shop Titel Leistung" - das sind nur Kategorien ohne Werte
   const mainServices = useMemo(() => {
-    console.log(`🔄 mainServices useMemo: Berechne neu mit ${services.length} Services`);
-    
+    console.log(
+      `🔄 mainServices useMemo: Berechne neu mit ${services.length} Services`
+    );
+
     // Sicherheitscheck: Wenn zu wenige Services im State, könnte ein Problem vorliegen
     if (services.length < 20) {
-      console.warn(`⚠️ Nur ${services.length} Services im State (erwartet mindestens 36)!`);
+      console.warn(
+        `⚠️ Nur ${services.length} Services im State (erwartet mindestens 36)!`
+      );
     }
-    
+
     const filtered = services
       .filter((s) => {
         if (!s.serviceType) {
@@ -44,19 +51,33 @@ export default function ServiceConfigOnboarding({ onComplete }) {
         return isShopLeistung && !isTitelLeistung;
       })
       .sort((a, b) => a.title.localeCompare(b.title));
-    
-    console.log(`🎨 Hauptleistungen: ${filtered.length} (erwartet: 11) aus ${services.length} total Services`);
+
+    console.log(
+      `🎨 Hauptleistungen: ${filtered.length} (erwartet: 11) aus ${services.length} total Services`
+    );
     if (filtered.length > 0) {
-      console.log(`🎨 Hauptleistungen:`, filtered.map(s => `${s.title} (${s.serviceType})`));
-      const gemischte = filtered.filter(s => s.serviceType?.includes("Unterleistung Backend"));
-      console.log(`🎨 Davon gemischt (📎): ${gemischte.length} (erwartet: 3)`, gemischte.map(s => s.title));
+      console.log(
+        `🎨 Hauptleistungen:`,
+        filtered.map((s) => `${s.title} (${s.serviceType})`)
+      );
+      const gemischte = filtered.filter((s) =>
+        s.serviceType?.includes("Unterleistung Backend")
+      );
+      console.log(
+        `🎨 Davon gemischt (📎): ${gemischte.length} (erwartet: 3)`,
+        gemischte.map((s) => s.title)
+      );
     } else if (services.length > 0) {
-      console.error(`❌ KRITISCH: Keine Hauptleistungen gefunden, obwohl ${services.length} Services im State sind!`);
-      console.log('🎨 Service-Typen:', [...new Set(services.map(s => s.serviceType))]);
+      console.error(
+        `❌ KRITISCH: Keine Hauptleistungen gefunden, obwohl ${services.length} Services im State sind!`
+      );
+      console.log("🎨 Service-Typen:", [
+        ...new Set(services.map((s) => s.serviceType)),
+      ]);
     }
     return filtered;
   }, [services]);
-  
+
   // Hilfsfunktion: Prüft ob Service auch Unterleistung ist (3 Stück: Malervlies, Raufaser, Tapeten entfernen)
   const isAlsoSubService = (service) => {
     return service?.serviceType?.includes("Unterleistung Backend");
@@ -64,9 +85,9 @@ export default function ServiceConfigOnboarding({ onComplete }) {
 
   // Alle Unterleistungen
   const subServices = useMemo(() => {
-    return services.filter((s) => 
-      s.serviceType?.includes("Unterleistung Backend")
-    ).sort((a, b) => a.title.localeCompare(b.title));
+    return services
+      .filter((s) => s.serviceType?.includes("Unterleistung Backend"))
+      .sort((a, b) => a.title.localeCompare(b.title));
   }, [services]);
 
   const currentService = mainServices[currentIndex];
@@ -95,6 +116,8 @@ export default function ServiceConfigOnboarding({ onComplete }) {
         // Workflow-Reihenfolge
         workflowOrder: currentService.workflowOrder || 20,
         workflowPhase: currentService.workflowPhase || "beschichtung",
+        // Stauberzeugung
+        createsDust: currentService.createsDust || false,
         // Unterleistungs-Reihenfolge (nur relevant wenn diese Leistung eine Unterleistung ist)
         subWorkflowOrder: currentService.subWorkflowOrder || null,
         subWorkflowTotal: currentService.subWorkflowTotal || null,
@@ -105,9 +128,9 @@ export default function ServiceConfigOnboarding({ onComplete }) {
       // Prüfe includedSubServices ODER finde alle, die diese Leistung in includedIn haben
       const assignedSubs = currentService.includedSubServices || [];
       const implicitSubs = subServices
-        .filter(sub => sub.includedIn?.includes(currentService.id))
-        .map(sub => sub.id);
-      
+        .filter((sub) => sub.includedIn?.includes(currentService.id))
+        .map((sub) => sub.id);
+
       setSelectedSubServices([...new Set([...assignedSubs, ...implicitSubs])]);
     }
   }, [currentService, subServices]);
@@ -133,32 +156,40 @@ export default function ServiceConfigOnboarding({ onComplete }) {
 
     try {
       // Speichere alle Werte über Redux (aktualisiert auch den State!)
-      await dispatch(updateServiceConfig({
-        serviceId: currentService.id,
-        config: {
-          standardValuePerUnit: formData.standardValuePerUnit,
-          minTime: formData.minTime,
-          waitTime: formData.waitTime,
-          efficiencyStart: formData.efficiencyStart,
-          efficiencyCap: formData.efficiencyCap,
-          efficiencyStepPercent: formData.efficiencyStepPercent,
-          maxProductivityPerDay: formData.maxProductivityPerDay,
-          materialType: formData.materialType,
-          materialValue: formData.materialValue,
-          includedSubServices: selectedSubServices,
-          // Workflow-Reihenfolge
-          workflowOrder: formData.workflowOrder,
-          workflowPhase: formData.workflowPhase,
-          // Unterleistungs-Reihenfolge
-          subWorkflowOrder: formData.subWorkflowOrder,
-          subWorkflowTotal: formData.subWorkflowTotal,
-          subWorkflowExplanation: formData.subWorkflowExplanation,
-          configOnboardingCompleted: true,
-          materialOnboardingCompleted: true,
-        }
-      })).unwrap();
+      await dispatch(
+        updateServiceConfig({
+          serviceId: currentService.id,
+          config: {
+            standardValuePerUnit: formData.standardValuePerUnit,
+            minTime: formData.minTime,
+            waitTime: formData.waitTime,
+            efficiencyStart: formData.efficiencyStart,
+            efficiencyCap: formData.efficiencyCap,
+            efficiencyStepPercent: formData.efficiencyStepPercent,
+            maxProductivityPerDay: formData.maxProductivityPerDay,
+            materialType: formData.materialType,
+            materialValue: formData.materialValue,
+            includedSubServices: selectedSubServices,
+            // Workflow-Reihenfolge
+            workflowOrder: formData.workflowOrder,
+            workflowPhase: formData.workflowPhase,
+            // Stauberzeugung
+            createsDust: formData.createsDust,
+            // Unterleistungs-Reihenfolge
+            subWorkflowOrder: formData.subWorkflowOrder,
+            subWorkflowTotal: formData.subWorkflowTotal,
+            subWorkflowExplanation: formData.subWorkflowExplanation,
+            configOnboardingCompleted: true,
+            materialOnboardingCompleted: true,
+          },
+        })
+      ).unwrap();
 
-      console.log(`✅ Service ${currentService.id} gespeichert, gehe zu Index ${currentIndex + 1}`);
+      console.log(
+        `✅ Service ${currentService.id} gespeichert, gehe zu Index ${
+          currentIndex + 1
+        }`
+      );
 
       // WICHTIG: Redux State wird bereits durch updateServiceConfig.fulfilled aktualisiert!
       // KEIN fetchServices() nötig - das würde den State möglicherweise mit zu wenigen Services überschreiben
@@ -230,16 +261,32 @@ export default function ServiceConfigOnboarding({ onComplete }) {
   const progress = ((currentIndex + 1) / mainServices.length) * 100;
 
   return (
-    <div className="card onboarding-card" style={{ maxWidth: "900px", margin: "0 auto" }}>
+    <div
+      className="card onboarding-card"
+      style={{ maxWidth: "900px", margin: "0 auto" }}
+    >
       {/* Header mit Fortschritt */}
       <div style={{ marginBottom: "20px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: "10px",
+          }}
+        >
           <span>
             Leistung {currentIndex + 1} von {mainServices.length}
           </span>
           <span>{Math.round(progress)}%</span>
         </div>
-        <div style={{ background: "#e0e0e0", borderRadius: "4px", height: "8px", overflow: "hidden" }}>
+        <div
+          style={{
+            background: "#e0e0e0",
+            borderRadius: "4px",
+            height: "8px",
+            overflow: "hidden",
+          }}
+        >
           <div
             style={{
               background: "#4CAF50",
@@ -279,18 +326,26 @@ export default function ServiceConfigOnboarding({ onComplete }) {
       </div>
 
       {/* Leistungs-Header */}
-      <h2 style={{ borderBottom: "2px solid #2196F3", paddingBottom: "10px", marginBottom: "20px" }}>
+      <h2
+        style={{
+          borderBottom: "2px solid #2196F3",
+          paddingBottom: "10px",
+          marginBottom: "20px",
+        }}
+      >
         🎨 {currentService.title}
         {isAlsoSubService(currentService) && (
-          <span style={{ 
-            fontSize: "12px", 
-            background: "#9C27B0", 
-            color: "white", 
-            padding: "3px 8px", 
-            borderRadius: "12px", 
-            marginLeft: "10px",
-            verticalAlign: "middle"
-          }}>
+          <span
+            style={{
+              fontSize: "12px",
+              background: "#9C27B0",
+              color: "white",
+              padding: "3px 8px",
+              borderRadius: "12px",
+              marginLeft: "10px",
+              verticalAlign: "middle",
+            }}
+          >
             + Unterleistung
           </span>
         )}
@@ -298,58 +353,89 @@ export default function ServiceConfigOnboarding({ onComplete }) {
       <p style={{ color: "#666", marginBottom: "15px" }}>
         Einheit: <strong>{currentService.unit}</strong>
         {currentService.variant && (
-          <span style={{ marginLeft: "15px" }}>Variante: {currentService.variant}</span>
+          <span style={{ marginLeft: "15px" }}>
+            Variante: {currentService.variant}
+          </span>
         )}
       </p>
-      
+
       {/* Hinweis für gemischte Services */}
       {isAlsoSubService(currentService) && (
-        <div style={{ 
-          background: "#F3E5F5", 
-          padding: "10px 15px", 
-          borderRadius: "8px", 
-          marginBottom: "15px",
-          border: "1px solid #CE93D8",
-          fontSize: "13px",
-          color: "#6A1B9A"
-        }}>
-          📎 Diese Leistung ist <strong>sowohl eine Hauptleistung als auch eine Unterleistung</strong> und kann in anderen Leistungen enthalten sein.
+        <div
+          style={{
+            background: "#F3E5F5",
+            padding: "10px 15px",
+            borderRadius: "8px",
+            marginBottom: "15px",
+            border: "1px solid #CE93D8",
+            fontSize: "13px",
+            color: "#6A1B9A",
+          }}
+        >
+          📎 Diese Leistung ist{" "}
+          <strong>sowohl eine Hauptleistung als auch eine Unterleistung</strong>{" "}
+          und kann in anderen Leistungen enthalten sein.
         </div>
       )}
-      
+
       {/* Default-Werte Hinweis */}
-      <div style={{ 
-        background: "#E8F5E9", 
-        padding: "12px 15px", 
-        borderRadius: "8px", 
-        marginBottom: "20px",
-        border: "1px solid #A5D6A7",
-        display: "flex",
-        alignItems: "center",
-        gap: "10px"
-      }}>
+      <div
+        style={{
+          background: "#E8F5E9",
+          padding: "12px 15px",
+          borderRadius: "8px",
+          marginBottom: "20px",
+          border: "1px solid #A5D6A7",
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+        }}
+      >
         <span style={{ fontSize: "20px" }}>✨</span>
         <span style={{ fontSize: "14px", color: "#2E7D32" }}>
-          <strong>Default-Werte aus Stammdaten geladen</strong> - Sie können diese anpassen oder übernehmen.
+          <strong>Default-Werte aus Stammdaten geladen</strong> - Sie können
+          diese anpassen oder übernehmen.
         </span>
       </div>
 
       {/* Zwei-Spalten-Layout */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "30px" }}>
-        
+      <div
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "30px" }}
+      >
         {/* Linke Spalte: Zeitwerte & Effizienz */}
         <div>
           {/* Zeitwerte */}
-          <div style={{ background: "#e3f2fd", padding: "15px", borderRadius: "8px", marginBottom: "20px" }}>
-            <h3 style={{ margin: "0 0 15px 0", color: "#1565c0", fontSize: "16px" }}>
+          <div
+            style={{
+              background: "#e3f2fd",
+              padding: "15px",
+              borderRadius: "8px",
+              marginBottom: "20px",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0 0 15px 0",
+                color: "#1565c0",
+                fontSize: "16px",
+              }}
+            >
               ⏱️ Zeitwerte
             </h3>
-            
+
             <div style={{ marginBottom: "12px" }}>
-              <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "13px",
+                  marginBottom: "4px",
+                }}
+              >
                 Zeit pro {currentService.unit}:
               </label>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
                 <input
                   type="number"
                   name="standardValuePerUnit"
@@ -367,10 +453,18 @@ export default function ServiceConfigOnboarding({ onComplete }) {
             </div>
 
             <div style={{ marginBottom: "12px" }}>
-              <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "13px",
+                  marginBottom: "4px",
+                }}
+              >
                 Mindestzeit pro Tag:
               </label>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
                 <input
                   type="number"
                   name="minTime"
@@ -388,10 +482,18 @@ export default function ServiceConfigOnboarding({ onComplete }) {
             </div>
 
             <div>
-              <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "13px",
+                  marginBottom: "4px",
+                }}
+              >
                 Wartezeit (Trocknung):
               </label>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
                 <input
                   type="number"
                   name="waitTime"
@@ -410,16 +512,37 @@ export default function ServiceConfigOnboarding({ onComplete }) {
           </div>
 
           {/* Effizienz */}
-          <div style={{ background: "#e8f5e9", padding: "15px", borderRadius: "8px", marginBottom: "20px" }}>
-            <h3 style={{ margin: "0 0 15px 0", color: "#2e7d32", fontSize: "16px" }}>
+          <div
+            style={{
+              background: "#e8f5e9",
+              padding: "15px",
+              borderRadius: "8px",
+              marginBottom: "20px",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0 0 15px 0",
+                color: "#2e7d32",
+                fontSize: "16px",
+              }}
+            >
               📈 Effizienz-Steigerung
             </h3>
-            
+
             <div style={{ marginBottom: "12px" }}>
-              <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "13px",
+                  marginBottom: "4px",
+                }}
+              >
                 Effizienz beginnt ab:
               </label>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
                 <input
                   type="number"
                   name="efficiencyStart"
@@ -434,10 +557,18 @@ export default function ServiceConfigOnboarding({ onComplete }) {
             </div>
 
             <div style={{ marginBottom: "12px" }}>
-              <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "13px",
+                  marginBottom: "4px",
+                }}
+              >
                 Maximum (Deckel) bei:
               </label>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
                 <input
                   type="number"
                   name="efficiencyCap"
@@ -452,10 +583,18 @@ export default function ServiceConfigOnboarding({ onComplete }) {
             </div>
 
             <div>
-              <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "13px",
+                  marginBottom: "4px",
+                }}
+              >
                 Steigerung pro 10 {currentService.unit}:
               </label>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
                 <input
                   type="number"
                   name="efficiencyStepPercent"
@@ -472,16 +611,37 @@ export default function ServiceConfigOnboarding({ onComplete }) {
           </div>
 
           {/* Produktivität */}
-          <div style={{ background: "#fff3e0", padding: "15px", borderRadius: "8px", marginBottom: "20px" }}>
-            <h3 style={{ margin: "0 0 15px 0", color: "#e65100", fontSize: "16px" }}>
+          <div
+            style={{
+              background: "#fff3e0",
+              padding: "15px",
+              borderRadius: "8px",
+              marginBottom: "20px",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0 0 15px 0",
+                color: "#e65100",
+                fontSize: "16px",
+              }}
+            >
               🏃 Max. Produktivität
             </h3>
-            
+
             <div>
-              <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "13px",
+                  marginBottom: "4px",
+                }}
+              >
                 Max. Einheiten pro Tag:
               </label>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
                 <input
                   type="number"
                   name="maxProductivityPerDay"
@@ -497,19 +657,42 @@ export default function ServiceConfigOnboarding({ onComplete }) {
           </div>
 
           {/* Workflow-Reihenfolge */}
-          <div style={{ background: "#e3f2fd", padding: "15px", borderRadius: "8px" }}>
-            <h3 style={{ margin: "0 0 15px 0", color: "#1565c0", fontSize: "16px" }}>
+          <div
+            style={{
+              background: "#e3f2fd",
+              padding: "15px",
+              borderRadius: "8px",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0 0 15px 0",
+                color: "#1565c0",
+                fontSize: "16px",
+              }}
+            >
               🔢 Workflow-Reihenfolge
             </h3>
-            <p style={{ fontSize: "12px", color: "#666", marginBottom: "15px" }}>
-              Die Position dieser Leistung im Arbeitsablauf. Niedrigere Zahlen = früher im Ablauf.
+            <p
+              style={{ fontSize: "12px", color: "#666", marginBottom: "15px" }}
+            >
+              Die Position dieser Leistung im Arbeitsablauf. Niedrigere Zahlen =
+              früher im Ablauf.
             </p>
-            
+
             <div style={{ marginBottom: "12px" }}>
-              <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "13px",
+                  marginBottom: "4px",
+                }}
+              >
                 Workflow-Position:
               </label>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
                 <input
                   type="number"
                   name="workflowOrder"
@@ -527,7 +710,13 @@ export default function ServiceConfigOnboarding({ onComplete }) {
             </div>
 
             <div style={{ marginBottom: "12px" }}>
-              <label style={{ display: "block", fontSize: "13px", marginBottom: "4px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "13px",
+                  marginBottom: "4px",
+                }}
+              >
                 Phase:
               </label>
               <select
@@ -545,31 +734,102 @@ export default function ServiceConfigOnboarding({ onComplete }) {
             </div>
 
             {currentService.workflowExplanation && (
-              <div style={{ 
-                marginTop: "10px",
-                padding: "8px",
-                background: "white",
-                borderRadius: "4px",
-                fontSize: "12px",
-                color: "#555",
-                borderLeft: "3px solid #1565c0"
-              }}>
+              <div
+                style={{
+                  marginTop: "10px",
+                  padding: "8px",
+                  background: "white",
+                  borderRadius: "4px",
+                  fontSize: "12px",
+                  color: "#555",
+                  borderLeft: "3px solid #1565c0",
+                }}
+              >
                 💡 {currentService.workflowExplanation}
               </div>
             )}
+
+            {/* Stauberzeugung */}
+            <div
+              style={{
+                marginTop: "15px",
+                padding: "12px",
+                background: formData.createsDust ? "#fff3e0" : "white",
+                borderRadius: "4px",
+                border: formData.createsDust
+                  ? "1px solid #ff9800"
+                  : "1px solid #e0e0e0",
+              }}
+            >
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  name="createsDust"
+                  checked={formData.createsDust || false}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      createsDust: e.target.checked,
+                    }))
+                  }
+                  style={{ width: "18px", height: "18px" }}
+                />
+                <span style={{ fontSize: "14px", fontWeight: "500" }}>
+                  🌫️ Erzeugt Staub
+                </span>
+              </label>
+              <p
+                style={{
+                  fontSize: "11px",
+                  color: "#666",
+                  margin: "8px 0 0 28px",
+                }}
+              >
+                Stauberzeugende Arbeiten dürfen nicht während Trocknungsphasen
+                (z.B. Lackierung) im gleichen Raum ausgeführt werden.
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Rechte Spalte: Material & Unterleistungen */}
         <div>
           {/* Material */}
-          <div style={{ background: "#fce4ec", padding: "15px", borderRadius: "8px", marginBottom: "20px" }}>
-            <h3 style={{ margin: "0 0 15px 0", color: "#c2185b", fontSize: "16px" }}>
+          <div
+            style={{
+              background: "#fce4ec",
+              padding: "15px",
+              borderRadius: "8px",
+              marginBottom: "20px",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0 0 15px 0",
+                color: "#c2185b",
+                fontSize: "16px",
+              }}
+            >
               📦 Material-Zuschlag
             </h3>
-            
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "10px" }}
+            >
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  cursor: "pointer",
+                }}
+              >
                 <input
                   type="radio"
                   name="materialType"
@@ -581,7 +841,13 @@ export default function ServiceConfigOnboarding({ onComplete }) {
                 <span>Kein Material</span>
               </label>
 
-              <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  cursor: "pointer",
+                }}
+              >
                 <input
                   type="radio"
                   name="materialType"
@@ -592,7 +858,14 @@ export default function ServiceConfigOnboarding({ onComplete }) {
                 />
                 <span>Prozent auf Lohnkosten</span>
                 {formData.materialType === "percent" && (
-                  <div style={{ marginLeft: "10px", display: "flex", alignItems: "center", gap: "5px" }}>
+                  <div
+                    style={{
+                      marginLeft: "10px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                    }}
+                  >
                     <input
                       type="number"
                       name="materialValue"
@@ -607,7 +880,13 @@ export default function ServiceConfigOnboarding({ onComplete }) {
                 )}
               </label>
 
-              <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  cursor: "pointer",
+                }}
+              >
                 <input
                   type="radio"
                   name="materialType"
@@ -618,7 +897,14 @@ export default function ServiceConfigOnboarding({ onComplete }) {
                 />
                 <span>Fester Betrag pro {currentService.unit}</span>
                 {formData.materialType === "fixed" && (
-                  <div style={{ marginLeft: "10px", display: "flex", alignItems: "center", gap: "5px" }}>
+                  <div
+                    style={{
+                      marginLeft: "10px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                    }}
+                  >
                     <input
                       type="number"
                       name="materialValue"
@@ -636,19 +922,44 @@ export default function ServiceConfigOnboarding({ onComplete }) {
           </div>
 
           {/* Unterleistungen */}
-          <div style={{ background: "#f3e5f5", padding: "15px", borderRadius: "8px" }}>
-            <h3 style={{ margin: "0 0 15px 0", color: "#7b1fa2", fontSize: "16px" }}>
+          <div
+            style={{
+              background: "#f3e5f5",
+              padding: "15px",
+              borderRadius: "8px",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0 0 15px 0",
+                color: "#7b1fa2",
+                fontSize: "16px",
+              }}
+            >
               📎 Enthaltene Unterleistungen
             </h3>
-            <p style={{ fontSize: "12px", color: "#666", marginBottom: "10px" }}>
-              Welche Unterleistungen sind automatisch in dieser Leistung enthalten?
+            <p
+              style={{ fontSize: "12px", color: "#666", marginBottom: "10px" }}
+            >
+              Welche Unterleistungen sind automatisch in dieser Leistung
+              enthalten?
             </p>
 
-            <div style={{ maxHeight: "250px", overflowY: "auto", border: "1px solid #ddd", borderRadius: "4px", background: "white" }}>
+            <div
+              style={{
+                maxHeight: "250px",
+                overflowY: "auto",
+                border: "1px solid #ddd",
+                borderRadius: "4px",
+                background: "white",
+              }}
+            >
               {subServices.map((sub) => {
                 const isSelected = selectedSubServices.includes(sub.id);
-                const wasOriginallyIncluded = sub.includedIn?.includes(currentService.id);
-                
+                const wasOriginallyIncluded = sub.includedIn?.includes(
+                  currentService.id
+                );
+
                 return (
                   <label
                     key={sub.id}
@@ -668,7 +979,9 @@ export default function ServiceConfigOnboarding({ onComplete }) {
                       style={{ marginRight: "10px" }}
                     />
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: isSelected ? "bold" : "normal" }}>
+                      <div
+                        style={{ fontWeight: isSelected ? "bold" : "normal" }}
+                      >
                         {sub.title}
                       </div>
                       {sub.variant && (
@@ -678,7 +991,15 @@ export default function ServiceConfigOnboarding({ onComplete }) {
                       )}
                     </div>
                     {wasOriginallyIncluded && (
-                      <span style={{ fontSize: "10px", background: "#e8f5e9", padding: "2px 6px", borderRadius: "3px", color: "#2e7d32" }}>
+                      <span
+                        style={{
+                          fontSize: "10px",
+                          background: "#e8f5e9",
+                          padding: "2px 6px",
+                          borderRadius: "3px",
+                          color: "#2e7d32",
+                        }}
+                      >
                         Default
                       </span>
                     )}
@@ -686,7 +1007,7 @@ export default function ServiceConfigOnboarding({ onComplete }) {
                 );
               })}
             </div>
-            
+
             <div style={{ marginTop: "10px", fontSize: "12px", color: "#666" }}>
               {selectedSubServices.length} Unterleistung(en) ausgewählt
             </div>
@@ -695,7 +1016,13 @@ export default function ServiceConfigOnboarding({ onComplete }) {
       </div>
 
       {/* Navigation Buttons */}
-      <div style={{ marginTop: "30px", display: "flex", justifyContent: "space-between" }}>
+      <div
+        style={{
+          marginTop: "30px",
+          display: "flex",
+          justifyContent: "space-between",
+        }}
+      >
         <div style={{ display: "flex", gap: "10px" }}>
           <button
             type="button"
@@ -728,4 +1055,3 @@ export default function ServiceConfigOnboarding({ onComplete }) {
     </div>
   );
 }
-

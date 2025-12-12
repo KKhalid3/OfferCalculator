@@ -23,7 +23,7 @@ export async function initDatabase() {
 
   try {
     const db = await createRxDatabase({
-      name: 'offercalculator_v6_sub_services', // Neue DB mit Unterleistungen-Onboarding
+      name: 'offercalculator_v7_window_sizes', // v7: createsDust + Fenstergrößen
       storage: getRxStorageDexie(),
       ignoreDuplicate: true,
     });

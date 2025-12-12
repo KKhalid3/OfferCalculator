@@ -1,109 +1,125 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import { Provider } from 'react-redux';
-import { store } from './store';
-import { initDatabase, getDatabase } from './database/database';
-import { seedAllData } from './database/seedData';
-import { initialData } from './data/initialData';
-import App from './App';
-import './index.css';
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { Provider } from "react-redux";
+import { store } from "./store";
+import { initDatabase, getDatabase } from "./database/database";
+import { seedAllData } from "./database/seedData";
+import { initialData } from "./data/initialData";
+import App from "./App";
+import "./index.css";
 
 async function initApp() {
   try {
     // RxDB initialisieren
-    console.log('Initialisiere RxDB...');
+    console.log("Initialisiere RxDB...");
     const db = await initDatabase();
-    
+
     // Prüfen ob Daten vorhanden
     const servicesCount = await db.collections.services.count().exec();
-    
+
     if (servicesCount === 0) {
-      console.log('Datenbank ist leer, lade Initial-Daten...');
+      console.log("Datenbank ist leer, lade Initial-Daten...");
       await seedAllData(db, initialData);
       console.log(`✅ ${initialData.services?.length || 0} Services geladen`);
     } else {
       console.log(`Datenbank enthält bereits ${servicesCount} Services`);
       // Falls zu wenige Services, neu seeden
       if (servicesCount < 10) {
-        console.log('Wenige Services gefunden, lade Daten neu...');
+        console.log("Wenige Services gefunden, lade Daten neu...");
         // Alte Daten löschen
         await db.collections.services.find().remove();
         await db.collections.specialServices.find().remove();
         await db.collections.factors.find().remove();
         // Neu seeden
         await seedAllData(db, initialData);
-        console.log(`✅ ${initialData.services?.length || 0} Services neu geladen`);
+        console.log(
+          `✅ ${initialData.services?.length || 0} Services neu geladen`
+        );
       }
     }
-    
+
     // Prüfen ob Services wirklich in der DB sind
     const testServices = await db.collections.services.find().exec();
-    console.log('Test: Services in DB:', testServices.length);
+    console.log("Test: Services in DB:", testServices.length);
     if (testServices.length > 0) {
-      console.log('Erste 3 Services:', testServices.slice(0, 3).map(d => ({ id: d.id, title: d.title })));
+      console.log(
+        "Erste 3 Services:",
+        testServices.slice(0, 3).map((d) => ({ id: d.id, title: d.title }))
+      );
     }
-    
+
     // Prüfen ob SpecialServices in der DB sind
-    const testSpecialServices = await db.collections.specialServices.find().exec();
-    console.log('Test: SpecialServices in DB:', testSpecialServices.length);
+    const testSpecialServices = await db.collections.specialServices
+      .find()
+      .exec();
+    console.log("Test: SpecialServices in DB:", testSpecialServices.length);
     if (testSpecialServices.length > 0) {
-      console.log('Erste SpecialService:', testSpecialServices[0].toJSON());
+      console.log("Erste SpecialService:", testSpecialServices[0].toJSON());
     } else {
-      console.warn('⚠️ Keine SpecialServices in DB gefunden!');
+      console.warn("⚠️ Keine SpecialServices in DB gefunden!");
       // Manuell seeden
-      console.log('Seede SpecialServices manuell...');
-      if (initialData.specialServices && initialData.specialServices.length > 0) {
+      console.log("Seede SpecialServices manuell...");
+      if (
+        initialData.specialServices &&
+        initialData.specialServices.length > 0
+      ) {
         for (const special of initialData.specialServices) {
           try {
             await db.collections.specialServices.insert({
               ...special,
               createdAt: Date.now(),
-              updatedAt: Date.now()
+              updatedAt: Date.now(),
             });
           } catch (e) {
-            console.log('SpecialService existiert bereits:', special.id);
+            console.log("SpecialService existiert bereits:", special.id);
           }
         }
         const afterSeed = await db.collections.specialServices.find().exec();
-        console.log('Nach manuellem Seeding: SpecialServices in DB:', afterSeed.length);
+        console.log(
+          "Nach manuellem Seeding: SpecialServices in DB:",
+          afterSeed.length
+        );
       }
     }
-    
+
     // React App rendern
-    ReactDOM.createRoot(document.getElementById('root')).render(
+    ReactDOM.createRoot(document.getElementById("root")).render(
       <React.StrictMode>
         <Provider store={store}>
           <App />
         </Provider>
       </React.StrictMode>
     );
-    
-    console.log('✅ App erfolgreich gestartet');
+
+    console.log("✅ App erfolgreich gestartet");
   } catch (error) {
-    console.error('❌ Failed to initialize app:', error);
-    
+    console.error("❌ Failed to initialize app:", error);
+
     // Reset-Funktion für den Button
     const handleResetDB = async () => {
       try {
         // IndexedDB löschen
         const databases = await window.indexedDB.databases();
         for (const db of databases) {
-          if (db.name && db.name.includes('offercalculator')) {
+          if (db.name && db.name.includes("offercalculator")) {
             window.indexedDB.deleteDatabase(db.name);
-            console.log('Gelöscht:', db.name);
+            console.log("Gelöscht:", db.name);
           }
         }
-        alert('Datenbank gelöscht. Seite wird neu geladen...');
+        alert("Datenbank gelöscht. Seite wird neu geladen...");
         window.location.reload();
       } catch (resetError) {
-        console.error('Fehler beim Löschen:', resetError);
-        alert('Fehler beim Zurücksetzen der Datenbank. Bitte öffnen Sie die Browser-Konsole.');
+        console.error("Fehler beim Löschen:", resetError);
+        alert(
+          "Fehler beim Zurücksetzen der Datenbank. Bitte öffnen Sie die Browser-Konsole."
+        );
       }
     };
-    
+
     // Fehleranzeige mit Reset-Button
-    const errorDiv = document.createElement('div');
-    errorDiv.style.cssText = 'padding: 40px; max-width: 800px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;';
+    const errorDiv = document.createElement("div");
+    errorDiv.style.cssText =
+      'padding: 40px; max-width: 800px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;';
     errorDiv.innerHTML = `
       <div style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; padding: 30px; margin-bottom: 20px;">
         <h1 style="color: #856404; margin-top: 0; font-size: 24px;">⚠️ Fehler beim Starten der Anwendung</h1>
@@ -148,13 +164,14 @@ async function initApp() {
         </p>
       </div>
     `;
-    
-    document.getElementById('root').appendChild(errorDiv);
-    
+
+    document.getElementById("root").appendChild(errorDiv);
+
     // Event Listener für Reset-Button
-    document.getElementById('reset-db-button').addEventListener('click', handleResetDB);
+    document
+      .getElementById("reset-db-button")
+      .addEventListener("click", handleResetDB);
   }
 }
 
 initApp();
-

@@ -71,7 +71,12 @@ const getAreaName = (area) => {
 };
 
 // Prüft ob zwei Arbeitsbereiche parallel im gleichen Raum möglich sind
-const canWorkParallelInSameRoom = (dryingArea, otherArea) => {
+// otherTaskCreatesDust: ob die geplante Arbeit Staub erzeugt (z.B. Schleifen)
+const canWorkParallelInSameRoom = (
+  dryingArea,
+  otherArea,
+  otherTaskCreatesDust = false
+) => {
   // Regeln für Parallelarbeit im gleichen Raum:
 
   // Boden trocknet: NICHTS anderes möglich (man muss drauf stehen!)
@@ -82,7 +87,30 @@ const canWorkParallelInSameRoom = (dryingArea, otherArea) => {
     };
   }
 
-  // Decke trocknet: Wände, Fenster, Türen können gemacht werden
+  // WICHTIG: Stauberzeugende Arbeiten während Trocknungsphasen verhindern
+  // Staub würde sich in der feuchten Oberfläche festsetzen!
+  if (
+    otherTaskCreatesDust &&
+    [
+      "fenster",
+      "tuer",
+      "lackierung",
+      "anstrich",
+      "wand",
+      "decke",
+      "spachtel",
+      "grundierung",
+    ].includes(dryingArea)
+  ) {
+    return {
+      canWork: false,
+      reason: `🌫️ Stauberzeugende Arbeit nicht möglich – ${getAreaName(
+        dryingArea
+      )} trocknet noch und würde durch Staub verunreinigt`,
+    };
+  }
+
+  // Decke trocknet: Wände, Fenster, Türen können gemacht werden (wenn kein Staub)
   if (dryingArea === "decke") {
     if (["wand", "fenster", "tuer", "lackierung"].includes(otherArea)) {
       return {
@@ -115,14 +143,14 @@ const canWorkParallelInSameRoom = (dryingArea, otherArea) => {
     }
   }
 
-  // Fenster/Türen trocknen: Andere Flächen können gemacht werden
+  // Fenster/Türen trocknen: Andere Flächen können gemacht werden (wenn kein Staub)
   if (["fenster", "tuer", "lackierung"].includes(dryingArea)) {
-    if (["wand", "decke"].includes(otherArea)) {
+    if (["wand", "decke"].includes(otherArea) && !otherTaskCreatesDust) {
       return {
         canWork: true,
         reason: `${getAreaName(dryingArea)} trocknet – ${getAreaName(
           otherArea
-        )} kann bearbeitet werden`,
+        )} kann bearbeitet werden (keine stauberzeugende Arbeit)`,
       };
     }
   }
@@ -561,6 +589,41 @@ export default function DayPlanningDialog({
     const taskPool = [];
     const tasksByObject = {};
 
+    // ========================================
+    // BAUSTELLENEINRICHTUNG als ersten Task hinzufügen
+    // ========================================
+    if (companySettings?.siteSetup && companySettings.siteSetup > 0) {
+      const setupTask = {
+        id: "site-setup",
+        objectId: "project",
+        objectName: "Baustelle",
+        objectType: "Projekt",
+        serviceName: "Baustelleneinrichtung",
+        totalTime: companySettings.siteSetup,
+        remainingTime: companySettings.siteSetup,
+        waitTime: 0,
+        isSubService: false,
+        isFromSpecialNote: false,
+        quantity: 1,
+        unit: "pauschal",
+        workArea: "setup",
+        workAreaName: "Einrichtung",
+        workflowOrder: 0, // Allererster Task
+        workflowPhase: "start",
+        workflowPhaseName: "Start",
+        workflowPhaseIcon: "🚀",
+        workflowPhaseColor: "#607D8B",
+        workflowExplanation:
+          "Baustelle einrichten, Material bereitstellen, Wege sichern",
+        createsDust: false,
+        scheduled: false,
+        isProjectTask: true, // Markierung für Projekt-weite Tasks
+      };
+      taskPool.push(setupTask);
+      tasksByObject["project"] = [setupTask];
+    }
+
+    // Objekt-spezifische Tasks sammeln
     results.objects.forEach((obj) => {
       tasksByObject[obj.id] = [];
       obj.services?.forEach((svc) => {
@@ -590,13 +653,49 @@ export default function DayPlanningDialog({
           workflowPhaseIcon: phase?.icon || "📋",
           workflowPhaseColor: phase?.color || "#2196F3",
           workflowExplanation: svc.workflowExplanation || null,
+          createsDust: svc.createsDust || false,
           scheduled: false,
+          isProjectTask: false,
         };
 
         taskPool.push(task);
         tasksByObject[obj.id].push(task);
       });
     });
+
+    // ========================================
+    // BAUSTELLENRÄUMUNG als letzten Task hinzufügen
+    // ========================================
+    if (companySettings?.siteClearance && companySettings.siteClearance > 0) {
+      const clearanceTask = {
+        id: "site-clearance",
+        objectId: "project-end",
+        objectName: "Baustelle",
+        objectType: "Projekt",
+        serviceName: "Baustellenräumung / Entsorgung",
+        totalTime: companySettings.siteClearance,
+        remainingTime: companySettings.siteClearance,
+        waitTime: 0,
+        isSubService: false,
+        isFromSpecialNote: false,
+        quantity: 1,
+        unit: "pauschal",
+        workArea: "cleanup",
+        workAreaName: "Räumung",
+        workflowOrder: 999, // Allerletzter Task
+        workflowPhase: "finish",
+        workflowPhaseName: "Finish",
+        workflowPhaseIcon: "🧹",
+        workflowPhaseColor: "#9E9E9E",
+        workflowExplanation:
+          "Abdeckungen entfernen, Abfälle entsorgen, Baustelle reinigen",
+        createsDust: false,
+        scheduled: false,
+        isProjectTask: true,
+      };
+      taskPool.push(clearanceTask);
+      tasksByObject["project-end"] = [clearanceTask];
+    }
 
     // Sortiere Tasks innerhalb jedes Objekts nach workflowOrder
     const objectIds = Object.keys(tasksByObject);
@@ -622,7 +721,13 @@ export default function DayPlanningDialog({
     let currentObjectIndex = 0;
 
     // Hilfsfunktion: Prüft ob Arbeit während Trocknungsphase möglich ist
-    const canWorkDuringDrying = (dryingArea, otherArea, sameRoom) => {
+    // otherTaskCreatesDust: ob die geplante Arbeit Staub erzeugt
+    const canWorkDuringDrying = (
+      dryingArea,
+      otherArea,
+      sameRoom,
+      otherTaskCreatesDust = false
+    ) => {
       if (dryingArea === "boden" && sameRoom) {
         return {
           canWork: false,
@@ -632,6 +737,29 @@ export default function DayPlanningDialog({
       if (!sameRoom) {
         return { canWork: true, reason: "Anderer Raum – unabhängig" };
       }
+
+      // WICHTIG: Stauberzeugende Arbeiten während Trocknungsphasen im gleichen Raum verhindern
+      // Staub würde sich in der feuchten Oberfläche festsetzen!
+      if (
+        otherTaskCreatesDust &&
+        sameRoom &&
+        [
+          "fenster",
+          "tuer",
+          "lackierung",
+          "anstrich",
+          "wand",
+          "decke",
+          "spachtel",
+          "grundierung",
+        ].includes(dryingArea)
+      ) {
+        return {
+          canWork: false,
+          reason: `🌫️ Stauberzeugende Arbeit nicht möglich – ${dryingArea} trocknet noch`,
+        };
+      }
+
       if (dryingArea === "decke" && sameRoom) {
         if (
           ["wand", "fenster", "tuer", "lackierung", "boden"].includes(otherArea)
@@ -657,10 +785,11 @@ export default function DayPlanningDialog({
         }
       }
       if (["fenster", "tuer", "lackierung"].includes(dryingArea) && sameRoom) {
-        if (["wand", "decke"].includes(otherArea)) {
+        if (["wand", "decke"].includes(otherArea) && !otherTaskCreatesDust) {
           return {
             canWork: true,
-            reason: "Türen/Fenster trocknen – Wände/Decke möglich",
+            reason:
+              "Türen/Fenster trocknen – nicht-stauberzeugende Arbeiten möglich",
           };
         }
       }
@@ -673,25 +802,48 @@ export default function DayPlanningDialog({
       };
     };
 
+    // ========================================
     // Hilfsfunktion: Nächsten verfügbaren Task finden
+    // Bei Kundenfreigabe: RAUMÜBERGREIFEND nach Phase arbeiten
+    // 1. Überall Start/Abdecken
+    // 2. Überall Abriss
+    // 3. Überall Untergrund/Vorarbeiten
+    // 4. Weiter nach Workflow-Reihenfolge
+    // ========================================
     const getNextAvailableTask = () => {
-      // Prüfe alle Objekte, startend beim aktuellen
-      for (let i = 0; i < objectIds.length; i++) {
-        const objIndex = (currentObjectIndex + i) % objectIds.length;
-        const objectId = objectIds[objIndex];
-        const tasks = tasksByObject[objectId];
+      // ========================================
+      // PRIORITÄT 0: Projekt-Tasks (Baustelleneinrichtung zuerst)
+      // ========================================
+      const projectSetup = tasksByObject["project"]?.[0];
+      if (projectSetup && projectSetup.remainingTime > 0) {
+        return {
+          task: projectSetup,
+          objectId: "project",
+          reason: "Baustelleneinrichtung zuerst",
+        };
+      }
 
-        for (const task of tasks) {
-          if (task.remainingTime <= 0) continue;
+      // ========================================
+      // BEI KUNDENFREIGABE: Raumübergreifend nach Phase arbeiten
+      // ========================================
+      if (customerApproval) {
+        // Sammle alle verbleibenden Tasks (außer Projekt-Tasks)
+        const allRemainingTasks = taskPool.filter(
+          (t) => t.remainingTime > 0 && !t.isProjectTask
+        );
 
-          // Prüfe ob Vorgänger im gleichen Objekt abgeschlossen sind
-          const taskIndex = tasks.indexOf(task);
-          const predecessorsComplete = tasks
-            .slice(0, taskIndex)
-            .every((t) => t.remainingTime <= 0);
-          if (!predecessorsComplete) continue;
+        // Sortiere nach Phase-Order, dann workflowOrder
+        allRemainingTasks.sort((a, b) => {
+          const phaseA = workflowPhases[a.workflowPhase]?.order || 5;
+          const phaseB = workflowPhases[b.workflowPhase]?.order || 5;
+          if (phaseA !== phaseB) return phaseA - phaseB;
+          return a.workflowOrder - b.workflowOrder;
+        });
 
-          // Prüfe ob Objekt in Trocknungsphase ist
+        for (const task of allRemainingTasks) {
+          const objectId = task.objectId;
+
+          // Prüfe Trocknungsphasen für dieses Objekt
           const dryingPhase = activeDryingPhases.find(
             (d) => d.objectId === objectId
           );
@@ -699,41 +851,147 @@ export default function DayPlanningDialog({
             const canWork = canWorkDuringDrying(
               dryingPhase.area,
               task.workArea,
-              true
+              true,
+              task.createsDust
             );
             if (!canWork.canWork) continue;
           }
 
+          // Prüfe ob Vorgänger im gleichen Objekt UND gleicher Phase abgeschlossen
+          const objectTasks = tasksByObject[objectId] || [];
+          const samePhasePredecessors = objectTasks.filter(
+            (t) =>
+              t.workflowPhase === task.workflowPhase &&
+              t.workflowOrder < task.workflowOrder
+          );
+          const samePhasePredsComplete = samePhasePredecessors.every(
+            (t) => t.remainingTime <= 0
+          );
+
+          if (!samePhasePredsComplete) continue;
+
+          // Prüfe ob vorherige Phasen in DIESEM Objekt abgeschlossen sind
+          const taskPhaseOrder = workflowPhases[task.workflowPhase]?.order || 5;
+          const previousPhaseTasks = objectTasks.filter((t) => {
+            const tPhaseOrder = workflowPhases[t.workflowPhase]?.order || 5;
+            return tPhaseOrder < taskPhaseOrder;
+          });
+          const previousPhasesComplete = previousPhaseTasks.every(
+            (t) => t.remainingTime <= 0
+          );
+
+          if (!previousPhasesComplete) continue;
+
           return {
             task,
             objectId,
-            reason: predecessorsComplete
-              ? "Workflow-Reihenfolge"
-              : "Parallel möglich",
+            reason: `Raumübergreifend: ${task.workflowPhaseName}`,
           };
         }
       }
 
-      // Priorität 2: Tasks aus anderen Objekten (wenn Kundenfreigabe oder Trocknungszeit)
-      if (customerApproval || activeDryingPhases.length > 0) {
-        for (const objectId of objectIds) {
+      // ========================================
+      // OHNE KUNDENFREIGABE: Pro Objekt sequenziell arbeiten
+      // ========================================
+      else {
+        for (let i = 0; i < objectIds.length; i++) {
+          const objIndex = (currentObjectIndex + i) % objectIds.length;
+          const objectId = objectIds[objIndex];
+
+          // Überspringe Projekt-Tasks
+          if (objectId === "project" || objectId === "project-end") continue;
+
           const tasks = tasksByObject[objectId];
+          if (!tasks) continue;
 
           for (const task of tasks) {
             if (task.remainingTime <= 0) continue;
 
+            // Prüfe ob Vorgänger im gleichen Objekt abgeschlossen sind
             const taskIndex = tasks.indexOf(task);
             const predecessorsComplete = tasks
               .slice(0, taskIndex)
               .every((t) => t.remainingTime <= 0);
             if (!predecessorsComplete) continue;
 
+            // Prüfe ob Objekt in Trocknungsphase ist
+            const dryingPhase = activeDryingPhases.find(
+              (d) => d.objectId === objectId
+            );
+            if (dryingPhase) {
+              const canWork = canWorkDuringDrying(
+                dryingPhase.area,
+                task.workArea,
+                true,
+                task.createsDust
+              );
+              if (!canWork.canWork) continue;
+            }
+
             return {
               task,
               objectId,
-              reason: "Parallele Arbeit in anderem Raum",
+              reason: "Workflow-Reihenfolge",
             };
           }
+        }
+
+        // Auch ohne Kundenfreigabe: Bei Trocknungszeit in anderen Räumen arbeiten
+        if (activeDryingPhases.length > 0) {
+          for (const objectId of objectIds) {
+            if (objectId === "project" || objectId === "project-end") continue;
+
+            const tasks = tasksByObject[objectId];
+            if (!tasks) continue;
+
+            for (const task of tasks) {
+              if (task.remainingTime <= 0) continue;
+
+              const taskIndex = tasks.indexOf(task);
+              const predecessorsComplete = tasks
+                .slice(0, taskIndex)
+                .every((t) => t.remainingTime <= 0);
+              if (!predecessorsComplete) continue;
+
+              // Prüfe Trocknungsphase
+              const dryingPhase = activeDryingPhases.find(
+                (d) => d.objectId === objectId
+              );
+              if (dryingPhase) {
+                const canWork = canWorkDuringDrying(
+                  dryingPhase.area,
+                  task.workArea,
+                  true,
+                  task.createsDust
+                );
+                if (!canWork.canWork) continue;
+              }
+
+              return {
+                task,
+                objectId,
+                reason: "Parallele Arbeit während Trocknung",
+              };
+            }
+          }
+        }
+      }
+
+      // ========================================
+      // PRIORITÄT LETZTE: Baustellenräumung (nur wenn alles andere fertig)
+      // ========================================
+      const allRegularTasksDone = taskPool
+        .filter((t) => !t.isProjectTask)
+        .every((t) => t.remainingTime <= 0);
+
+      if (allRegularTasksDone) {
+        const projectCleanup = tasksByObject["project-end"]?.[0];
+        if (projectCleanup && projectCleanup.remainingTime > 0) {
+          return {
+            task: projectCleanup,
+            objectId: "project-end",
+            reason: "Baustellenräumung zum Abschluss",
+          };
         }
       }
 
@@ -862,9 +1120,11 @@ export default function DayPlanningDialog({
 
         // Analysiere was während Trocknung möglich ist
         sameObjectTasks.forEach((t) => {
+          // WICHTIG: Übergebe ob der andere Task Staub erzeugt
           const parallelCheck = canWorkParallelInSameRoom(
             task.workArea,
-            t.workArea
+            t.workArea,
+            t.createsDust // Stauberzeugung des anderen Tasks
           );
           if (parallelCheck.canWork) {
             dryingPhase.sameRoomCanDo.push({
@@ -873,6 +1133,7 @@ export default function DayPlanningDialog({
               area: t.workAreaName,
               time: t.remainingTime,
               reason: parallelCheck.reason,
+              createsDust: t.createsDust,
             });
           } else {
             dryingPhase.sameRoomCannotDo.push({
@@ -881,6 +1142,7 @@ export default function DayPlanningDialog({
               area: t.workAreaName,
               time: t.remainingTime,
               reason: parallelCheck.reason,
+              createsDust: t.createsDust,
             });
           }
         });

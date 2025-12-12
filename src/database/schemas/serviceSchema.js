@@ -45,7 +45,7 @@ export const serviceSchema = {
     workflowPhase: { type: ['string', 'null'] }, // Phase: start, vorbereitung, abriss, untergrund, grundierung, beschichtung, anstrich, lackierung, finish
     workflowExplanation: { type: ['string', 'null'] }, // Erklärung warum diese Position
     workflowTip: { type: ['string', 'null'] }, // Praxis-Tipp für den Anwender
-    
+
     // === Unterleistungs-Reihenfolge ===
     subWorkflowOrder: { type: ['number', 'null'] }, // Position innerhalb der Hauptleistung (1, 2, 3, ...)
     subWorkflowTotal: { type: ['number', 'null'] }, // Gesamtanzahl Schritte in der Hauptleistung
@@ -56,6 +56,9 @@ export const serviceSchema = {
     multiEmployeeEfficiencyKeep: { type: ['boolean', 'null'] }, // Bleibt Effizienz bei Aufteilung erhalten?
     minQuantityForMultiEmployee: { type: ['number', 'null'] }, // Ab welcher Menge macht Mehrpersonal Sinn?
     maxEmployeesForService: { type: ['number', 'null'] }, // Max sinnvolle Mitarbeiter für diese Leistung
+
+    // === Stauberzeugung ===
+    createsDust: { type: ['boolean', 'null'] }, // Erzeugt diese Leistung Staub? (verhindert Parallelarbeit bei Trocknungsphasen)
 
     createdAt: { type: 'number' },
     updatedAt: { type: 'number' }

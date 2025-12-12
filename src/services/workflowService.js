@@ -16,6 +16,7 @@ export async function sortServicesByWorkflow(calculations) {
         workflowPhase: service?.workflowPhase || 'beschichtung',
         workflowExplanation: service?.workflowExplanation || null,
         waitTime: service?.waitTime || 0, // Trocknungszeit
+        createsDust: service?.createsDust || false, // Erzeugt Staub (wichtig für Trocknungsphasen)
         canSplit: service?.canSplit ?? true, // Kann über Tage aufgeteilt werden?
         // Mehrpersonal-Infos
         allowMultiEmployee: service?.allowMultiEmployee ?? true,
@@ -53,8 +54,12 @@ function detectWorkArea(serviceName) {
 
 /**
  * Prüft ob während einer Trocknungsphase andere Arbeiten möglich sind
+ * @param {string} dryingArea - Bereich der gerade trocknet (boden, wand, decke, fenster, tuer, lackierung)
+ * @param {string} otherArea - Bereich der bearbeitet werden soll
+ * @param {boolean} sameRoom - Ist es der gleiche Raum?
+ * @param {boolean} otherTaskCreatesDust - Erzeugt die geplante Arbeit Staub?
  */
-function canWorkDuringDrying(dryingArea, otherArea, sameRoom) {
+function canWorkDuringDrying(dryingArea, otherArea, sameRoom, otherTaskCreatesDust = false) {
   // Boden trocknet: Im gleichen Raum NICHTS möglich
   if (dryingArea === 'boden' && sameRoom) {
     return { canWork: false, reason: 'Boden trocknet – Raum nicht betretbar' };
@@ -63,6 +68,15 @@ function canWorkDuringDrying(dryingArea, otherArea, sameRoom) {
   // Anderer Raum: Immer möglich (wenn Kundenfreigabe)
   if (!sameRoom) {
     return { canWork: true, reason: 'Anderer Raum – unabhängig von Trocknungsphase' };
+  }
+
+  // WICHTIG: Stauberzeugende Arbeiten während Lackierung/Anstrich-Trocknung verhindern
+  // Staub würde sich in der feuchten Oberfläche festsetzen
+  if (otherTaskCreatesDust && ['fenster', 'tuer', 'lackierung', 'anstrich', 'wand', 'decke'].includes(dryingArea) && sameRoom) {
+    return {
+      canWork: false,
+      reason: `Stauberzeugende Arbeit nicht möglich – ${dryingArea} trocknet noch und würde durch Staub verunreinigt`
+    };
   }
 
   // Decke trocknet im gleichen Raum
@@ -82,10 +96,10 @@ function canWorkDuringDrying(dryingArea, otherArea, sameRoom) {
     }
   }
 
-  // Fenster/Türen trocknen
+  // Fenster/Türen trocknen - nur nicht-stauberzeugende Arbeiten erlauben
   if (['fenster', 'tuer', 'lackierung'].includes(dryingArea) && sameRoom) {
-    if (['wand', 'decke'].includes(otherArea)) {
-      return { canWork: true, reason: 'Türen/Fenster trocknen – Wände/Decke können bearbeitet werden' };
+    if (['wand', 'decke'].includes(otherArea) && !otherTaskCreatesDust) {
+      return { canWork: true, reason: 'Türen/Fenster trocknen – nicht-stauberzeugende Arbeiten an Wänden/Decke möglich' };
     }
   }
 
@@ -340,6 +354,7 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
       workflowOrder: calc.workflowOrder,
       workflowPhase: calc.workflowPhase,
       workArea: detectWorkArea(calc.serviceName),
+      createsDust: calc.createsDust || false, // Stauberzeugung
       canSplit: calc.canSplit ?? true,
       scheduled: false,
       splitParts: [], // Falls aufgeteilt: [{day, startTime, duration}]
@@ -385,7 +400,8 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
         const dryingPhase = activeDryingPhases.find(d => d.objectId === objectId);
         if (dryingPhase) {
           // Prüfe ob diese Arbeit während der Trocknung möglich ist
-          const canWork = canWorkDuringDrying(dryingPhase.area, task.workArea, true);
+          // WICHTIG: Stauberzeugende Arbeiten nicht während Trocknung im gleichen Raum
+          const canWork = canWorkDuringDrying(dryingPhase.area, task.workArea, true, task.createsDust);
           if (!canWork.canWork) continue;
         }
 
