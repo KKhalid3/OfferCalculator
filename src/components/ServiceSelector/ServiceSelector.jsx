@@ -56,29 +56,77 @@ export default function ServiceSelector() {
     dispatch(fetchServices());
   }, [dispatch]);
 
-  // Nur Shop-Leistungen anzeigen (keine reinen Unterleistungen)
-  const shopServices = useMemo(() => {
+  // Kategorien (Shop Titel Leistung) - nur Überschriften
+  const categories = useMemo(() => {
+    return services.filter((s) => {
+      if (!s.serviceType) return false;
+      return s.serviceType.includes("Shop Titel Leistung");
+    });
+  }, [services]);
+
+  // Auswählbare Leistungen (Shop Leistung, keine Kategorien)
+  const selectableServices = useMemo(() => {
     return services.filter((s) => {
       if (!s.serviceType) return false;
       return (
-        s.serviceType.includes("Shop Titel Leistung") ||
-        s.serviceType.includes("Shop Leistung")
+        s.serviceType.includes("Shop Leistung") &&
+        !s.serviceType.includes("Shop Titel Leistung")
       );
     });
   }, [services]);
 
-  // Raum-Services (keine Fenster/Türen-Leistungen)
+  // Raum-Services (keine Fenster/Türen/Lackier-Leistungen)
   const roomServices = useMemo(() => {
-    return shopServices.filter((s) => {
-      // Schließe Fenster- und Tür-Services aus
-      return !s.id.includes("fensterfluegel") && !s.id.includes("tuerfluegel");
+    return selectableServices.filter((s) => {
+      return (
+        !s.id.includes("fensterfluegel") &&
+        !s.id.includes("tuerfluegel") &&
+        !s.id.includes("lackieren")
+      );
     });
-  }, [shopServices]);
+  }, [selectableServices]);
+
+  // Raum-Kategorien (Tapezieren, Neuanstrich)
+  const roomCategories = useMemo(() => {
+    return categories.filter((c) => {
+      return c.id === "service_tapezieren" || c.id === "service_anstrich";
+    });
+  }, [categories]);
+
+  // Gruppiere Raum-Services nach Kategorie
+  const groupedRoomServices = useMemo(() => {
+    const groups = {};
+
+    // Initialisiere Gruppen für Kategorien
+    roomCategories.forEach((cat) => {
+      groups[cat.id] = {
+        category: cat,
+        services: [],
+      };
+    });
+
+    // Gruppe für Services ohne Kategorie
+    groups["uncategorized"] = {
+      category: null,
+      services: [],
+    };
+
+    // Sortiere Services in Gruppen
+    roomServices.forEach((service) => {
+      if (service.parentServiceId && groups[service.parentServiceId]) {
+        groups[service.parentServiceId].services.push(service);
+      } else {
+        groups["uncategorized"].services.push(service);
+      }
+    });
+
+    return groups;
+  }, [roomServices, roomCategories]);
 
   // Fenster-Services
   const windowServices = useMemo(() => {
-    return shopServices.filter((s) => s.id.includes("fensterfluegel"));
-  }, [shopServices]);
+    return selectableServices.filter((s) => s.id.includes("fensterfluegel"));
+  }, [selectableServices]);
 
   // Finde Unterleistungen für eine gegebene Service-ID
   const getSubServicesForService = (serviceId) => {
@@ -94,10 +142,11 @@ export default function ServiceSelector() {
   useEffect(() => {
     console.log("=== ServiceSelector Debug ===");
     console.log("Services in Redux:", services.length);
-    console.log("Shop Services gefiltert:", shopServices.length);
+    console.log("Kategorien:", categories.length);
+    console.log("Auswählbare Services:", selectableServices.length);
     console.log("Raum-Services:", roomServices.length);
     console.log("Fenster-Services:", windowServices.length);
-  }, [services, shopServices, roomServices, windowServices]);
+  }, [services, categories, selectableServices, roomServices, windowServices]);
 
   const handleServiceToggle = (objectId, serviceId) => {
     const object = objects.find((obj) => obj.id === objectId);
@@ -188,74 +237,145 @@ export default function ServiceSelector() {
                 <p>Keine Leistungen verfügbar.</p>
               ) : (
                 <div>
-                  {roomServices.map((service) => {
-                    const isSelected = (obj.services || []).includes(
-                      service.id
-                    );
-                    const subServices = getSubServicesForService(service.id);
-                    return (
-                      <div key={service.id} style={{ marginBottom: "10px" }}>
-                        <label
-                          style={{
-                            display: "block",
-                            fontWeight: isSelected ? "bold" : "normal",
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() =>
-                              handleServiceToggle(obj.id, service.id)
-                            }
-                          />
-                          <span style={{ marginLeft: "8px" }}>
-                            {service.title}
-                          </span>
-                          <span
-                            style={{
-                              marginLeft: "8px",
-                              color: "#888",
-                              fontSize: "12px",
-                            }}
-                          >
-                            ({service.unit})
-                          </span>
-                        </label>
+                  {/* Gruppierte Services nach Kategorie */}
+                  {Object.entries(groupedRoomServices).map(
+                    ([groupId, group]) => {
+                      // Überspringe leere Gruppen
+                      if (group.services.length === 0) return null;
 
-                        {isSelected && subServices.length > 0 && (
-                          <div
-                            style={{
-                              marginLeft: "28px",
-                              marginTop: "6px",
-                              padding: "8px",
-                              background: "#e8f5e9",
-                              borderRadius: "4px",
-                              borderLeft: "3px solid #4CAF50",
-                              fontSize: "12px",
-                            }}
-                          >
+                      return (
+                        <div key={groupId} style={{ marginBottom: "15px" }}>
+                          {/* Kategorie-Überschrift */}
+                          {group.category && (
                             <div
                               style={{
-                                color: "#2e7d32",
-                                marginBottom: "4px",
-                                fontWeight: "bold",
+                                padding: "8px 12px",
+                                background: "#e3f2fd",
+                                borderRadius: "4px",
+                                marginBottom: "8px",
+                                borderLeft: "4px solid #1976d2",
                               }}
                             >
-                              ✓ Enthaltene Unterleistungen:
-                            </div>
-                            {subServices.map((sub) => (
-                              <div
-                                key={sub.id}
-                                style={{ color: "#555", padding: "2px 0" }}
+                              <span
+                                style={{
+                                  fontWeight: "bold",
+                                  color: "#1565c0",
+                                  fontSize: "14px",
+                                }}
                               >
-                                • {sub.title}
-                              </div>
-                            ))}
+                                📁 {group.category.title}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Ungekategorisierte Services */}
+                          {!group.category && groupId === "uncategorized" && (
+                            <div
+                              style={{
+                                padding: "8px 12px",
+                                background: "#f5f5f5",
+                                borderRadius: "4px",
+                                marginBottom: "8px",
+                                borderLeft: "4px solid #9e9e9e",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontWeight: "bold",
+                                  color: "#616161",
+                                  fontSize: "14px",
+                                }}
+                              >
+                                📋 Weitere Leistungen
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Services in dieser Gruppe */}
+                          <div style={{ marginLeft: "16px" }}>
+                            {group.services.map((service) => {
+                              const isSelected = (obj.services || []).includes(
+                                service.id
+                              );
+                              const subServices = getSubServicesForService(
+                                service.id
+                              );
+                              return (
+                                <div
+                                  key={service.id}
+                                  style={{ marginBottom: "10px" }}
+                                >
+                                  <label
+                                    style={{
+                                      display: "block",
+                                      fontWeight: isSelected
+                                        ? "bold"
+                                        : "normal",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() =>
+                                        handleServiceToggle(obj.id, service.id)
+                                      }
+                                    />
+                                    <span style={{ marginLeft: "8px" }}>
+                                      {service.title}
+                                    </span>
+                                    <span
+                                      style={{
+                                        marginLeft: "8px",
+                                        color: "#888",
+                                        fontSize: "12px",
+                                      }}
+                                    >
+                                      ({service.unit})
+                                    </span>
+                                  </label>
+
+                                  {isSelected && subServices.length > 0 && (
+                                    <div
+                                      style={{
+                                        marginLeft: "28px",
+                                        marginTop: "6px",
+                                        padding: "8px",
+                                        background: "#e8f5e9",
+                                        borderRadius: "4px",
+                                        borderLeft: "3px solid #4CAF50",
+                                        fontSize: "12px",
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          color: "#2e7d32",
+                                          marginBottom: "4px",
+                                          fontWeight: "bold",
+                                        }}
+                                      >
+                                        ✓ Enthaltene Unterleistungen:
+                                      </div>
+                                      {subServices.map((sub) => (
+                                        <div
+                                          key={sub.id}
+                                          style={{
+                                            color: "#555",
+                                            padding: "2px 0",
+                                          }}
+                                        >
+                                          • {sub.title}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                        </div>
+                      );
+                    }
+                  )}
                 </div>
               )}
             </div>

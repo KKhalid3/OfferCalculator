@@ -24,8 +24,16 @@ export default function ServiceConfigOnboarding({ onComplete }) {
   const [formData, setFormData] = useState({});
   const [selectedSubServices, setSelectedSubServices] = useState([]);
 
-  // Alle Shop-Leistungen für das Onboarding (11 Stück erwartet)
-  // Davon 3 gemischt: Malervlies, Raufaser, Tapeten entfernen (= auch Unterleistung)
+  // Kategorien (Shop Titel Leistung) - nur für Gruppierung
+  const categories = useMemo(() => {
+    return services.filter((s) => {
+      if (!s.serviceType) return false;
+      return s.serviceType.includes("Shop Titel Leistung");
+    });
+  }, [services]);
+
+  // Alle Shop-Leistungen für das Onboarding
+  // Davon einige gemischt: Malervlies, Raufaser, Tapeten entfernen (= auch Unterleistung)
   // NICHT "Shop Titel Leistung" - das sind nur Kategorien ohne Werte
   const mainServices = useMemo(() => {
     console.log(
@@ -50,33 +58,49 @@ export default function ServiceConfigOnboarding({ onComplete }) {
         const isTitelLeistung = s.serviceType.includes("Shop Titel Leistung");
         return isShopLeistung && !isTitelLeistung;
       })
-      .sort((a, b) => a.title.localeCompare(b.title));
+      .sort((a, b) => {
+        // Sortiere nach Kategorie, dann nach Titel
+        const catA = a.parentServiceId || "zzz";
+        const catB = b.parentServiceId || "zzz";
+        if (catA !== catB) return catA.localeCompare(catB);
+        return a.title.localeCompare(b.title);
+      });
 
     console.log(
-      `🎨 Hauptleistungen: ${filtered.length} (erwartet: 11) aus ${services.length} total Services`
+      `🎨 Hauptleistungen: ${filtered.length} aus ${services.length} total Services`
     );
-    if (filtered.length > 0) {
-      console.log(
-        `🎨 Hauptleistungen:`,
-        filtered.map((s) => `${s.title} (${s.serviceType})`)
-      );
-      const gemischte = filtered.filter((s) =>
-        s.serviceType?.includes("Unterleistung Backend")
-      );
-      console.log(
-        `🎨 Davon gemischt (📎): ${gemischte.length} (erwartet: 3)`,
-        gemischte.map((s) => s.title)
-      );
-    } else if (services.length > 0) {
-      console.error(
-        `❌ KRITISCH: Keine Hauptleistungen gefunden, obwohl ${services.length} Services im State sind!`
-      );
-      console.log("🎨 Service-Typen:", [
-        ...new Set(services.map((s) => s.serviceType)),
-      ]);
-    }
     return filtered;
   }, [services]);
+
+  // Gruppiere Services nach Kategorie für Dropdown
+  const groupedServices = useMemo(() => {
+    const groups = {};
+
+    // Initialisiere Gruppen für Kategorien
+    categories.forEach((cat) => {
+      groups[cat.id] = {
+        category: cat,
+        services: [],
+      };
+    });
+
+    // Gruppe für Services ohne Kategorie
+    groups["uncategorized"] = {
+      category: { id: "uncategorized", title: "Weitere Leistungen" },
+      services: [],
+    };
+
+    // Sortiere Services in Gruppen
+    mainServices.forEach((service) => {
+      if (service.parentServiceId && groups[service.parentServiceId]) {
+        groups[service.parentServiceId].services.push(service);
+      } else {
+        groups["uncategorized"].services.push(service);
+      }
+    });
+
+    return groups;
+  }, [mainServices, categories]);
 
   // Hilfsfunktion: Prüft ob Service auch Unterleistung ist (3 Stück: Malervlies, Raufaser, Tapeten entfernen)
   const isAlsoSubService = (service) => {
@@ -297,7 +321,7 @@ export default function ServiceConfigOnboarding({ onComplete }) {
           />
         </div>
 
-        {/* Dropdown zur direkten Auswahl */}
+        {/* Dropdown zur direkten Auswahl - gruppiert nach Kategorien */}
         <div style={{ marginTop: "15px" }}>
           <label style={{ fontSize: "14px", color: "#666" }}>
             Direkt zu Leistung springen:
@@ -314,16 +338,47 @@ export default function ServiceConfigOnboarding({ onComplete }) {
               fontSize: "14px",
             }}
           >
-            {mainServices.map((service, index) => (
-              <option key={service.id} value={index}>
-                {service.configOnboardingCompleted ? "✅ " : "⚪ "}
-                {index + 1}. {service.title} ({service.unit})
-                {isAlsoSubService(service) ? " 📎" : ""}
-              </option>
-            ))}
+            {Object.entries(groupedServices).map(([groupId, group]) => {
+              if (group.services.length === 0) return null;
+              return (
+                <optgroup key={groupId} label={`📁 ${group.category.title}`}>
+                  {group.services.map((service) => {
+                    const index = mainServices.findIndex(
+                      (s) => s.id === service.id
+                    );
+                    return (
+                      <option key={service.id} value={index}>
+                        {service.configOnboardingCompleted ? "✅ " : "⚪ "}
+                        {service.title} ({service.unit})
+                        {isAlsoSubService(service) ? " 📎" : ""}
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              );
+            })}
           </select>
         </div>
       </div>
+
+      {/* Kategorie-Badge */}
+      {currentService.parentServiceId && (
+        <div
+          style={{
+            display: "inline-block",
+            padding: "4px 12px",
+            background: "#e3f2fd",
+            borderRadius: "4px",
+            marginBottom: "10px",
+            fontSize: "12px",
+            color: "#1565c0",
+          }}
+        >
+          📁{" "}
+          {categories.find((c) => c.id === currentService.parentServiceId)
+            ?.title || "Kategorie"}
+        </div>
+      )}
 
       {/* Leistungs-Header */}
       <h2

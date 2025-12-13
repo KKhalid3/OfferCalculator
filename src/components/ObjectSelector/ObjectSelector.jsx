@@ -9,6 +9,8 @@ import {
   OBJECT_TYPES,
   ROOM_SHAPES,
   WINDOW_SIZES,
+  DOOR_TYPES,
+  DOOR_SIZES,
   OBJECT_CATEGORIES,
 } from "../../constants";
 
@@ -30,6 +32,11 @@ export default function ObjectSelector() {
     windowSize: "mittel",
     windowCount: "1",
     windowLocation: "innen",
+    // Tür-Felder
+    doorType: "zimmertuer",
+    doorSize: "einfach",
+    doorCount: "1",
+    doorLocation: "innen",
   });
 
   const handleSubmit = (e) => {
@@ -83,6 +90,35 @@ export default function ObjectSelector() {
           specialNotes: [],
         })
       );
+    } else if (objectCategory === "tuer") {
+      if (!formData.name) {
+        alert("Bitte geben Sie einen Namen ein");
+        return;
+      }
+
+      const doorTypeConfig =
+        DOOR_TYPES.find((t) => t.id === formData.doorType) || DOOR_TYPES[0];
+      const doorSizeConfig =
+        DOOR_SIZES.find((s) => s.id === formData.doorSize) || DOOR_SIZES[0];
+
+      dispatch(
+        createObject({
+          name: formData.name,
+          type: "Tür",
+          objectCategory: "tuer",
+          doorType: formData.doorType,
+          doorTypeLabel: doorTypeConfig.name,
+          doorTimeFactor: doorTypeConfig.timeFactor,
+          doorSize: formData.doorSize,
+          doorSizeLabel: doorSizeConfig.name,
+          doorSizeFactor: doorSizeConfig.sizeFactor,
+          doorCount: parseInt(formData.doorCount) || 1,
+          doorLocation: formData.doorLocation,
+          unit: "Stk",
+          services: [],
+          specialNotes: [],
+        })
+      );
     }
 
     // Formular zurücksetzen
@@ -95,6 +131,10 @@ export default function ObjectSelector() {
       windowSize: "mittel",
       windowCount: "1",
       windowLocation: "innen",
+      doorType: "zimmertuer",
+      doorSize: "einfach",
+      doorCount: "1",
+      doorLocation: "innen",
     });
   };
 
@@ -300,24 +340,87 @@ export default function ObjectSelector() {
           </>
         )}
 
-        {/* Tür-spezifische Felder (Platzhalter für zukünftige Erweiterung) */}
+        {/* Tür-spezifische Felder */}
         {objectCategory === "tuer" && (
-          <div
-            style={{
-              padding: "20px",
-              background: "#fff3e0",
-              borderRadius: "8px",
-              marginBottom: "15px",
-            }}
+          <>
+            <div className="form-group">
+              <label>Türtyp:</label>
+              <select
+                value={formData.doorType}
+                onChange={(e) =>
+                  setFormData({ ...formData, doorType: e.target.value })
+                }
+              >
+                {DOOR_TYPES.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.name}
+                  </option>
+                ))}
+              </select>
+              <small
+                style={{ color: "#666", display: "block", marginTop: "4px" }}
+              >
+                Haustüren benötigen mehr Zeit als Zimmertüren
+              </small>
+            </div>
+
+            <div className="form-group">
+              <label>Türgröße:</label>
+              <select
+                value={formData.doorSize}
+                onChange={(e) =>
+                  setFormData({ ...formData, doorSize: e.target.value })
+                }
           >
-            <p style={{ margin: 0, color: "#e65100" }}>
-              🚧 Türen-Erfassung wird noch implementiert. Bitte vorerst als Raum
-              mit Tür-Services anlegen.
-            </p>
+                {DOOR_SIZES.map((size) => (
+                  <option key={size.id} value={size.id}>
+                    {size.name}
+                  </option>
+                ))}
+              </select>
+              <small
+                style={{ color: "#666", display: "block", marginTop: "4px" }}
+              >
+                Doppelflügelige Türen benötigen ca. 80% mehr Zeit
+              </small>
+            </div>
+
+            <div className="form-group">
+              <label>Anzahl (Stück):</label>
+              <input
+                type="number"
+                min="1"
+                value={formData.doorCount}
+                onChange={(e) =>
+                  setFormData({ ...formData, doorCount: e.target.value })
+                }
+                placeholder="z.B. 2"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Seite:</label>
+              <select
+                value={formData.doorLocation}
+                onChange={(e) =>
+                  setFormData({ ...formData, doorLocation: e.target.value })
+                }
+              >
+                <option value="innen">Innen</option>
+                <option value="aussen">Außen</option>
+                <option value="beide">Beide Seiten</option>
+              </select>
+              <small
+                style={{ color: "#666", display: "block", marginTop: "4px" }}
+              >
+                Außentüren benötigen wetterfesten Lack
+              </small>
           </div>
+          </>
         )}
 
-        <button type="submit" disabled={objectCategory === "tuer"}>
+        <button type="submit">
           {objectCategory === "raum"
             ? "🏠 Raum hinzufügen"
             : objectCategory === "fenster"
@@ -339,7 +442,11 @@ export default function ObjectSelector() {
                   padding: "10px",
                   marginBottom: "10px",
                   background:
-                    obj.objectCategory === "fenster" ? "#e3f2fd" : "#f9f9f9",
+                    obj.objectCategory === "fenster"
+                      ? "#e3f2fd"
+                      : obj.objectCategory === "tuer"
+                      ? "#f3e5f5"
+                      : "#f9f9f9",
                   borderRadius: "4px",
                   display: "flex",
                   justifyContent: "space-between",
@@ -347,6 +454,8 @@ export default function ObjectSelector() {
                   borderLeft:
                     obj.objectCategory === "fenster"
                       ? "4px solid #1976d2"
+                      : obj.objectCategory === "tuer"
+                      ? "4px solid #7b1fa2"
                       : "none",
                 }}
               >
@@ -386,6 +495,45 @@ export default function ObjectSelector() {
                         {obj.windowLocation === "innen"
                           ? "Innen"
                           : obj.windowLocation === "aussen"
+                          ? "Außen"
+                          : "Beide Seiten"}
+                      </span>
+                    </>
+                  )}
+
+                  {/* Tür-Anzeige */}
+                  {obj.objectCategory === "tuer" && (
+                    <>
+                      <strong>🚪 {obj.name}</strong>
+                      <span style={{ marginLeft: "10px", color: "#666" }}>
+                        {obj.doorCount}× {obj.doorTypeLabel}
+                      </span>
+                      <span
+                        style={{
+                          marginLeft: "10px",
+                          padding: "2px 8px",
+                          background: "#e1bee7",
+                          borderRadius: "4px",
+                          fontSize: "12px",
+                        }}
+                      >
+                        {obj.doorSizeLabel}
+                      </span>
+                      <span
+                        style={{
+                          marginLeft: "10px",
+                          padding: "2px 8px",
+                          background:
+                            obj.doorLocation === "aussen"
+                              ? "#ffecb3"
+                              : "#c8e6c9",
+                          borderRadius: "4px",
+                          fontSize: "12px",
+                        }}
+                      >
+                        {obj.doorLocation === "innen"
+                          ? "Innen"
+                          : obj.doorLocation === "aussen"
                           ? "Außen"
                           : "Beide Seiten"}
                       </span>

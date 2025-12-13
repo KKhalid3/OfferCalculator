@@ -25,6 +25,20 @@ export const WINDOW_SIZES = [
   { id: 'gross', name: 'Groß (≤ 2 m²)', maxArea: 2, timeFactor: 1.33 }
 ];
 
+// Türtypen für Stück-basierte Kalkulation
+export const DOOR_TYPES = [
+  { id: 'zimmertuer', name: 'Zimmertür', timeFactor: 1.0 },
+  { id: 'haustuer', name: 'Haustür', timeFactor: 1.5 },
+  { id: 'badtuer', name: 'Badtür', timeFactor: 1.0 },
+  { id: 'kellertuer', name: 'Kellertür', timeFactor: 1.2 }
+];
+
+// Türgrößen für Stück-basierte Kalkulation
+export const DOOR_SIZES = [
+  { id: 'einfach', name: 'Einfach (Standard)', sizeFactor: 1.0 },
+  { id: 'doppel', name: 'Doppelflügelig', sizeFactor: 1.8 }
+];
+
 // Objektkategorien für unterschiedliche Eingabeformulare
 export const OBJECT_CATEGORIES = [
   { id: 'raum', name: 'Raum', icon: '🏠' },
