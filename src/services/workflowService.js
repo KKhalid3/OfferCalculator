@@ -2,8 +2,28 @@ import { databaseService } from './databaseService';
 import { MINUTES_PER_DAY, HOURS_PER_DAY } from '../constants';
 
 /**
+ * Workflow-Phasen mit Prioritäten für logischen Arbeitsablauf
+ * Niedrigere Nummer = früher im Ablauf
+ */
+const WORKFLOW_PHASES = {
+  'einrichtung': 1,     // Baustelleneinrichtung
+  'vorbereitung': 2,    // Abdecken, Schutz
+  'abbruch': 3,         // Tapeten entfernen, Abbruch
+  'untergrund': 4,      // Spachteln, Schleifen
+  'grundierung': 5,     // Grundierungen
+  'tapezieren': 6,      // Tapezieren
+  'beschichtung': 7,    // Streichen, Anstrich
+  'lackierung': 8,      // Türen, Fenster lackieren
+  'abschluss': 9        // Aufräumen, Entsorgen
+};
+
+/**
  * Schritt 12: Sortierung nach Workflow
- * Sortiert Services nach ihrer workflowOrder für logische Arbeitsreihenfolge
+ * Sortiert Services nach ihrer workflowPhase UND workflowOrder für logische Arbeitsreihenfolge
+ * 
+ * VERBESSERUNG: Zweistufige Sortierung
+ * 1. Nach Phase (Vorbereitung → Untergrund → Beschichtung → Lackierung → Abschluss)
+ * 2. Innerhalb der Phase nach workflowOrder
  */
 export async function sortServicesByWorkflow(calculations) {
   // Services mit Workflow-Daten anreichern
@@ -18,6 +38,9 @@ export async function sortServicesByWorkflow(calculations) {
         waitTime: service?.waitTime || 0, // Trocknungszeit
         createsDust: service?.createsDust || false, // Erzeugt Staub (wichtig für Trocknungsphasen)
         canSplit: service?.canSplit ?? true, // Kann über Tage aufgeteilt werden?
+        // NEU: Gebündelte Services nicht im Workflow anzeigen
+        showInWorkflow: service?.showInWorkflow ?? true,
+        bundleCalculation: service?.bundleCalculation || false,
         // Mehrpersonal-Infos
         allowMultiEmployee: service?.allowMultiEmployee ?? true,
         multiEmployeeEfficiencyKeep: service?.multiEmployeeEfficiencyKeep ?? true,
@@ -28,8 +51,73 @@ export async function sortServicesByWorkflow(calculations) {
     })
   );
 
-  // Nach workflowOrder sortieren (aufsteigend)
-  return enrichedCalcs.sort((a, b) => a.workflowOrder - b.workflowOrder);
+  // Filtere gebündelte Services heraus (showInWorkflow: false)
+  const visibleCalcs = enrichedCalcs.filter(calc => calc.showInWorkflow !== false);
+
+  if (enrichedCalcs.length !== visibleCalcs.length) {
+    const hiddenCount = enrichedCalcs.length - visibleCalcs.length;
+    console.log(`📦 ${hiddenCount} gebündelte Unterleistung(en) aus Workflow-Anzeige entfernt`);
+  }
+
+  // ZWEISTUFIGE SORTIERUNG: Phase → workflowOrder
+  return visibleCalcs.sort((a, b) => {
+    // 1. Nach Phase sortieren (niedrigere Phase-Nummer = früher)
+    const phaseA = WORKFLOW_PHASES[a.workflowPhase] || 7;
+    const phaseB = WORKFLOW_PHASES[b.workflowPhase] || 7;
+
+    if (phaseA !== phaseB) {
+      return phaseA - phaseB;
+    }
+
+    // 2. Innerhalb der Phase nach workflowOrder
+    return a.workflowOrder - b.workflowOrder;
+  });
+}
+
+/**
+ * NEU: Prüft Cross-Object Abhängigkeiten
+ * Schleifen auf Türen/Fenstern MUSS vor Anstrich auf Wänden/Decken im selben Raum erfolgen
+ * @param {Object} task - Der zu prüfende Task
+ * @param {Object} tasksByObject - Alle Tasks gruppiert nach Objekten
+ * @param {Array} objects - Alle Objekt-Definitionen
+ * @returns {boolean} - true wenn Task ausgeführt werden darf
+ */
+function checkCrossObjectDependencies(task, tasksByObject, objects) {
+  // Nur relevant für 'beschichtung' Phase Tasks (Anstrich auf Wänden)
+  if (task.workflowPhase !== 'beschichtung') return true;
+
+  // Nur relevant wenn der Arbeitsbereich 'anstrich', 'wand' oder 'decke' ist
+  if (!['anstrich', 'wand', 'decke', 'allgemein'].includes(task.workArea)) return true;
+
+  // Finde das Objekt für diesen Task
+  const taskObject = objects?.find(obj => obj.id === task.objectId);
+  if (!taskObject) return true;
+
+  // Nur relevant für Raum-Objekte
+  if (taskObject.objectCategory !== 'raum') return true;
+
+  const roomId = task.objectId;
+
+  // Finde alle Türen/Fenster die diesem Raum zugeordnet sind
+  const relatedDoorWindowObjects = objects?.filter(obj =>
+    (obj.objectCategory === 'tuer' || obj.objectCategory === 'fenster') &&
+    obj.assignedToRoomId === roomId
+  ) || [];
+
+  // Prüfe ob alle Schleifen-Tasks auf diesen Türen/Fenstern abgeschlossen sind
+  for (const relObj of relatedDoorWindowObjects) {
+    const relTasks = tasksByObject[relObj.id] || [];
+
+    for (const relTask of relTasks) {
+      // Prüfe nur Tasks in Phase 'untergrund' (Schleifen)
+      if (relTask.workflowPhase === 'untergrund' && relTask.remainingTime > 0) {
+        console.log(`⏳ Cross-Object Abhängigkeit: "${task.serviceName}" wartet auf "${relTask.serviceName}" (${relObj.name})`);
+        return false; // Schleifen noch nicht fertig → Anstrich muss warten
+      }
+    }
+  }
+
+  return true; // Alle Abhängigkeiten erfüllt
 }
 
 /**
@@ -254,6 +342,19 @@ export async function calculateOptimalEmployeesAdvanced(
       break;
     }
 
+    // === NEU: Effizienz-Verlust prüfen ===
+    // Pro zusätzlichem Mitarbeiter ca. 5% Effizienzverlust durch Koordination
+    const efficiencyLossPerEmployee = 5; // 5% pro zusätzlichem MA
+    const totalEfficiencyLoss = (emp - 1) * efficiencyLossPerEmployee;
+
+    if (totalEfficiencyLoss > maxEfficiencyLoss && emp > 1) {
+      result.reasoning.push({
+        type: 'warning',
+        text: `${emp} Mitarbeiter: ${totalEfficiencyLoss}% Effizienzverlust > ${maxEfficiencyLoss}% Maximum`
+      });
+      continue;
+    }
+
     // Prüfe ob der "Rest des Tages unproduktiv" Fall auftritt
     const restOfLastDay = (daysNeeded * dailyHours) - hoursPerEmp;
     if (restOfLastDay > (dailyHours * 0.5) && emp > 1) {
@@ -268,6 +369,14 @@ export async function calculateOptimalEmployeesAdvanced(
     // Diese Konfiguration ist akzeptabel
     optimalEmployees = emp;
     result.hoursPerEmployee = hoursPerEmp;
+
+    // Effizienz-Info hinzufügen wenn mehr als 1 MA
+    if (emp > 1 && totalEfficiencyLoss > 0) {
+      result.reasoning.push({
+        type: 'info',
+        text: `${emp} Mitarbeiter: ${totalEfficiencyLoss}% Koordinations-Overhead (akzeptabel)`
+      });
+    }
   }
 
   // === REGEL 6: Warnung bei Trocknungszeit ohne Kundenfreigabe ===
@@ -335,6 +444,9 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
   const minTaskSplitTime = companySettings?.minTaskSplitTime ?? 60;
   const maxDayMinutes = Math.round(dailyMinutes * (1 + maxOvertimePercent / 100));
 
+  // NEU: Alle Objekte laden für Cross-Object Abhängigkeiten
+  const allObjects = await databaseService.getAllObjects();
+
   // Schritt 1: Alle Tasks mit Details anreichern und nach Objekten gruppieren
   const enrichedCalcs = await sortServicesByWorkflow(calculations);
 
@@ -358,6 +470,7 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
       canSplit: calc.canSplit ?? true,
       scheduled: false,
       splitParts: [], // Falls aufgeteilt: [{day, startTime, duration}]
+      assignedEmployee: null, // NEU: Zugewiesener Mitarbeiter
     };
 
     allTasks.push(task);
@@ -368,21 +481,69 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
     tasksByObject[calc.objectId].push(task);
   }
 
-  // Sortiere Tasks innerhalb jedes Objekts nach workflowOrder
+  // Sortiere Tasks innerhalb jedes Objekts:
+  // 1. Nach workflowPhase (Vorbereitung → Beschichtung → Lackierung → Abschluss)
+  // 2. Innerhalb der Phase: Längere Trocknungszeiten zuerst (Drying-First!)
+  // 3. Dann nach workflowOrder
   for (const objectId in tasksByObject) {
-    tasksByObject[objectId].sort((a, b) => a.workflowOrder - b.workflowOrder);
+    tasksByObject[objectId].sort((a, b) => {
+      // Nach Phase sortieren
+      const phaseA = WORKFLOW_PHASES[a.workflowPhase] || 7;
+      const phaseB = WORKFLOW_PHASES[b.workflowPhase] || 7;
+      if (phaseA !== phaseB) return phaseA - phaseB;
+
+      // Innerhalb der Phase: Trocknungszeit (längere zuerst)
+      const waitDiff = (b.waitTime || 0) - (a.waitTime || 0);
+      if (waitDiff !== 0) return waitDiff;
+
+      // Nach workflowOrder
+      return a.workflowOrder - b.workflowOrder;
+    });
   }
 
-  // Schritt 2: Intelligente Tagesplanung
+  // === NEU: MITARBEITERANZAHL ZUERST BERECHNEN ===
+  const totalHours = allTasks.reduce((sum, t) => sum + t.totalTime, 0) / 60;
+  const uniqueObjects = new Set(allTasks.map(t => t.objectId)).size;
+
+  const employeeResult = await calculateOptimalEmployeesAdvanced(
+    totalHours,
+    companySettings,
+    enrichedCalcs,
+    uniqueObjects,
+    customerApproval
+  );
+
+  const numberOfEmployees = employeeResult.optimalEmployees || 1;
+  console.log(`👷 Plane mit ${numberOfEmployees} Mitarbeiter(n) für ${totalHours.toFixed(1)}h Arbeit`);
+
+  // Schritt 2: Intelligente MEHRPERSONAL-Tagesplanung
   const days = [];
   let currentDay = createNewDay(1);
-  let activeDryingPhases = []; // Aktive Trocknungsphasen: [{objectId, area, endsAt}]
+
+  // NEU: Mitarbeiter-Zeitslots verwalten
+  // Jeder Mitarbeiter hat seine eigene Timeline pro Tag
+  const employeeSchedules = [];
+  for (let i = 0; i < numberOfEmployees; i++) {
+    employeeSchedules.push({
+      id: i + 1,
+      name: `MA ${i + 1}`,
+      currentDayMinutes: 0,
+      currentObjectId: null, // Welches Objekt bearbeitet der MA gerade?
+      activeDryingPhase: null
+    });
+  }
+
+  let activeDryingPhases = []; // Aktive Trocknungsphasen: [{objectId, area, endsAt, startedByEmployee}]
   const objectIds = Object.keys(tasksByObject);
   let currentObjectIndex = 0;
 
-  // Hilfsfunktion: Nächsten verfügbaren Task finden
-  function getNextAvailableTask() {
-    // Priorität 1: Task im aktuellen Objekt (Workflow-Reihenfolge)
+  // Hilfsfunktion: Nächsten verfügbaren Task für einen Mitarbeiter finden
+  // VERBESSERUNG: "Drying-First" Strategie - Tasks mit langen Trocknungszeiten zuerst
+  // NEU: Berücksichtigt welchen Raum der Mitarbeiter gerade bearbeitet
+  function getNextAvailableTask(employee) {
+    const availableTasks = [];
+
+    // Sammle ALLE verfügbaren Tasks
     for (let i = 0; i < objectIds.length; i++) {
       const objIndex = (currentObjectIndex + i) % objectIds.length;
       const objectId = objectIds[objIndex];
@@ -396,6 +557,9 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
         const predecessorsComplete = tasks.slice(0, taskIndex).every(t => t.remainingTime <= 0);
         if (!predecessorsComplete) continue;
 
+        // NEU: Prüfe Cross-Object Abhängigkeiten (Schleifen Türen/Fenster vor Anstrich Wände)
+        if (!checkCrossObjectDependencies(task, tasksByObject, allObjects)) continue;
+
         // Prüfe ob Objekt gerade in Trocknungsphase ist
         const dryingPhase = activeDryingPhases.find(d => d.objectId === objectId);
         if (dryingPhase) {
@@ -405,14 +569,28 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
           if (!canWork.canWork) continue;
         }
 
-        return { task, objectId, reason: 'Nächster Task in Workflow-Reihenfolge' };
+        // NEU: Prüfe ob ein anderer Mitarbeiter dieses Objekt gerade bearbeitet
+        // Mehrere MA können nur in UNTERSCHIEDLICHEN Räumen gleichzeitig arbeiten
+        const otherEmployeeInSameObject = employeeSchedules.some(
+          e => e.id !== employee.id && e.currentObjectId === objectId && e.currentDayMinutes < dailyMinutes
+        );
+        if (otherEmployeeInSameObject && numberOfEmployees > 1) {
+          // Nur erlauben wenn Kundenfreigabe UND verschiedene Arbeitsbereiche
+          if (!customerApproval) continue;
+        }
+
+        availableTasks.push({
+          task,
+          objectId,
+          reason: 'Nächster Task in Workflow-Reihenfolge',
+          isCurrentObject: employee.currentObjectId === objectId || objIndex === currentObjectIndex
+        });
       }
     }
 
     // Priorität 2: Task aus anderem Objekt (wenn Kundenfreigabe oder Trocknungszeit)
-    if (customerApproval || activeDryingPhases.length > 0) {
+    if ((customerApproval || activeDryingPhases.length > 0) && availableTasks.length === 0) {
       for (const objectId of objectIds) {
-        // Überspringe Objekte in Trocknungsphase (nur für gleiche Fläche)
         const tasks = tasksByObject[objectId];
 
         for (const task of tasks) {
@@ -423,25 +601,69 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
           const predecessorsComplete = tasks.slice(0, taskIndex).every(t => t.remainingTime <= 0);
           if (!predecessorsComplete) continue;
 
-          return { task, objectId, reason: 'Parallele Arbeit in anderem Raum' };
+          // NEU: Prüfe Cross-Object Abhängigkeiten auch bei paralleler Arbeit
+          if (!checkCrossObjectDependencies(task, tasksByObject, allObjects)) continue;
+
+          availableTasks.push({
+            task,
+            objectId,
+            reason: 'Parallele Arbeit in anderem Raum',
+            isCurrentObject: false
+          });
         }
       }
     }
 
-    return null;
+    if (availableTasks.length === 0) return null;
+
+    // === DRYING-FIRST STRATEGIE ===
+    // Sortiere verfügbare Tasks:
+    // 1. Längere Trocknungszeit = höhere Priorität (früher machen!)
+    // 2. Bei gleicher Trocknungszeit: Objekt des Mitarbeiters bevorzugen
+    // 3. Bei gleichem Objekt: nach workflowOrder
+    availableTasks.sort((a, b) => {
+      // Trocknungszeit: Längere zuerst (absteigend)
+      const waitDiff = (b.task.waitTime || 0) - (a.task.waitTime || 0);
+      if (waitDiff !== 0) return waitDiff;
+
+      // Aktuelles Objekt des Mitarbeiters bevorzugen
+      if (a.isCurrentObject && !b.isCurrentObject) return -1;
+      if (!a.isCurrentObject && b.isCurrentObject) return 1;
+
+      // Nach Workflow-Order (aufsteigend)
+      return a.task.workflowOrder - b.task.workflowOrder;
+    });
+
+    const selected = availableTasks[0];
+
+    // Debug-Log wenn Drying-First aktiv
+    if (selected.task.waitTime > 0 && availableTasks.length > 1) {
+      console.log(`🔄 Drying-First: "${selected.task.serviceName}" priorisiert (${selected.task.waitTime} min Trocknungszeit)`);
+    }
+
+    return selected;
   }
 
-  // Hilfsfunktion: Task zum Tag hinzufügen (mit Überstunden-Logik)
-  function addTaskToDay(task, objectId) {
-    const remainingInDay = dailyMinutes - currentDay.minutes;
-    const maxRemainingWithOvertime = maxDayMinutes - currentDay.minutes;
+  // Hilfsfunktion: Task zum Tag hinzufügen (mit Mitarbeiter-Zuweisung)
+  function addTaskToDay(task, objectId, employee) {
+    const remainingInDay = dailyMinutes - employee.currentDayMinutes;
+    const maxRemainingWithOvertime = maxDayMinutes - employee.currentDayMinutes;
 
-    // Wenn Tag schon über Maximum → kein Platz mehr
+    // Wenn Mitarbeiter-Tag schon über Maximum → kein Platz mehr
     if (maxRemainingWithOvertime <= 0) return false;
 
     let timeToSchedule = 0;
     let isOvertime = false;
     let isPartial = false;
+
+    // === NEUE ÜBERSTUNDEN-REGEL ===
+    // Überstunden NUR wenn:
+    // 1. Task wurde HEUTE BEGONNEN (nicht Fortsetzung von gestern)
+    // 2. Task kann MIT Überstunden KOMPLETT beendet werden
+    // Sonst ergibt es keinen Sinn!
+
+    const isNewTaskToday = task.totalTime === task.remainingTime; // Noch nie angefangen
+    const canFinishWithOvertime = task.remainingTime <= maxRemainingWithOvertime;
 
     // ENTSCHEIDUNGSLOGIK:
     // 1. Passt Task komplett in reguläre Zeit?
@@ -450,37 +672,26 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
       isPartial = false;
       isOvertime = false;
     }
-    // 2. Passt Task komplett MIT Überstunden?
-    else if (task.remainingTime <= maxRemainingWithOvertime) {
+    // 2. Task HEUTE begonnen UND kann MIT Überstunden fertig werden → Überstunden SINNVOLL
+    else if (isNewTaskToday && canFinishWithOvertime) {
       timeToSchedule = task.remainingTime;
       isPartial = false;
-      isOvertime = currentDay.minutes + task.remainingTime > dailyMinutes;
+      isOvertime = employee.currentDayMinutes + task.remainingTime > dailyMinutes;
+      console.log(`✅ Überstunden sinnvoll: "${task.serviceName}" wird heute abgeschlossen (${Math.round(timeToSchedule)} min, MA ${employee.id})`);
     }
-    // 3. Task muss aufgeteilt werden
+    // 3. Überstunden NICHT sinnvoll - Task aufteilen oder verschieben
     else {
-      const potentialRest = task.remainingTime - maxRemainingWithOvertime;
-
-      // Wenn Rest < minTaskSplitTime → alles mit Überstunden machen (wenn möglich)
-      if (potentialRest < minTaskSplitTime && potentialRest > 0) {
-        if (task.remainingTime <= maxDayMinutes * 1.1) {
-          timeToSchedule = task.remainingTime;
-          isPartial = false;
-          isOvertime = true;
-        } else {
-          timeToSchedule = maxRemainingWithOvertime;
-          isPartial = true;
-          isOvertime = currentDay.minutes + timeToSchedule > dailyMinutes;
-        }
-      }
-      // Wenn heutiger Teil < minTaskSplitTime → lieber alles morgen
-      else if (remainingInDay < minTaskSplitTime && remainingInDay > 0) {
-        return false; // Task auf morgen verschieben
-      }
-      // Normale Aufteilung: Mit Überstunden so viel wie möglich heute
-      else {
-        timeToSchedule = maxRemainingWithOvertime;
+      // Wenn genug Zeit heute (ohne Überstunden) → regulär arbeiten, Rest morgen
+      if (remainingInDay >= minTaskSplitTime) {
+        timeToSchedule = remainingInDay;
         isPartial = true;
-        isOvertime = currentDay.minutes + timeToSchedule > dailyMinutes;
+        isOvertime = false;
+        console.log(`⏸️ Keine Überstunden: "${task.serviceName}" wird morgen fortgesetzt (${Math.round(task.remainingTime - remainingInDay)} min übrig)`);
+      }
+      // Zu wenig Zeit heute → komplett auf morgen verschieben
+      else {
+        console.log(`⏭️ "${task.serviceName}" auf morgen verschoben (nur ${Math.round(remainingInDay)} min übrig für MA ${employee.id})`);
+        return false;
       }
     }
 
@@ -491,23 +702,34 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
       serviceId: task.serviceId,
       serviceName: task.serviceName,
       workArea: task.workArea,
-      startTime: currentDay.minutes,
+      startTime: employee.currentDayMinutes,
       duration: timeToSchedule,
       isPartial: isPartial,
       isContinuation: task.totalTime !== task.remainingTime,
       isOvertime: isOvertime,
       waitTime: (!isPartial) ? task.waitTime : 0, // Trocknung nur wenn komplett
+      // NEU: Mitarbeiter-Zuweisung
+      employeeId: employee.id,
+      employeeName: employee.name,
     };
 
     currentDay.tasks.push(taskEntry);
-    currentDay.minutes += timeToSchedule;
+
+    // Mitarbeiter-Zeit aktualisieren
+    employee.currentDayMinutes += timeToSchedule;
+    employee.currentObjectId = objectId;
+    task.assignedEmployee = employee.id;
+
+    // Tag-Gesamtzeit = längste Mitarbeiter-Zeit
+    const maxEmployeeMinutes = Math.max(...employeeSchedules.map(e => e.currentDayMinutes));
+    currentDay.minutes = maxEmployeeMinutes;
     currentDay.hours = currentDay.minutes / 60;
     task.remainingTime -= timeToSchedule;
 
-    // Überstunden-Marker
+    // Überstunden-Marker (wenn ein MA Überstunden macht)
     if (isOvertime) {
       currentDay.hasOvertime = true;
-      currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
+      currentDay.overtimeMinutes = Math.max(currentDay.overtimeMinutes || 0, employee.currentDayMinutes - dailyMinutes);
     }
 
     // Trocknungsphase starten wenn Task abgeschlossen und Wartezeit > 0
@@ -516,16 +738,18 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
         serviceId: task.serviceId,
         objectId: objectId,
         duration: task.waitTime,
-        startTime: currentDay.minutes,
-        workArea: task.workArea
+        startTime: employee.currentDayMinutes,
+        workArea: task.workArea,
+        employeeId: employee.id
       });
 
       // Aktive Trocknungsphase hinzufügen
       activeDryingPhases.push({
         objectId: objectId,
         area: task.workArea,
-        endsAt: currentDay.minutes + task.waitTime,
-        serviceName: task.serviceName
+        endsAt: employee.currentDayMinutes + task.waitTime,
+        serviceName: task.serviceName,
+        startedByEmployee: employee.id
       });
     }
 
@@ -536,7 +760,17 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
     return true;
   }
 
-  // Hauptschleife: Tage füllen
+  // NEU: Finde den Mitarbeiter mit der geringsten Arbeitszeit heute
+  function getAvailableEmployee() {
+    // Sortiere nach verfügbarer Zeit (wer am wenigsten gearbeitet hat)
+    const available = employeeSchedules
+      .filter(e => e.currentDayMinutes < maxDayMinutes)
+      .sort((a, b) => a.currentDayMinutes - b.currentDayMinutes);
+
+    return available.length > 0 ? available[0] : null;
+  }
+
+  // Hauptschleife: Tage füllen (MEHRPERSONAL-Version)
   let iterations = 0;
   const maxIterations = 1000; // Sicherheit gegen Endlosschleifen
 
@@ -547,21 +781,38 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
     const allDone = allTasks.every(t => t.remainingTime <= 0);
     if (allDone) break;
 
-    // Abgelaufene Trocknungsphasen entfernen
-    activeDryingPhases = activeDryingPhases.filter(d => d.endsAt > currentDay.minutes);
+    // Abgelaufene Trocknungsphasen entfernen (basierend auf Mitarbeiter-Zeit)
+    const maxEmployeeTime = Math.max(...employeeSchedules.map(e => e.currentDayMinutes));
+    activeDryingPhases = activeDryingPhases.filter(d => d.endsAt > maxEmployeeTime);
 
-    // Nächsten Task finden
-    const next = getNextAvailableTask();
+    // NEU: Finde verfügbaren Mitarbeiter
+    const employee = getAvailableEmployee();
+
+    if (!employee) {
+      // Alle Mitarbeiter haben ihr Tageslimit erreicht → neuen Tag starten
+      currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
+      currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
+      days.push(currentDay);
+      currentDay = createNewDay(days.length + 1);
+      // Mitarbeiter-Zeiten zurücksetzen für neuen Tag
+      employeeSchedules.forEach(e => {
+        e.currentDayMinutes = 0;
+        e.currentObjectId = null;
+      });
+      activeDryingPhases = [];
+      continue;
+    }
+
+    // Nächsten Task für diesen Mitarbeiter finden
+    const next = getNextAvailableTask(employee);
 
     if (next) {
-      const added = addTaskToDay(next.task, next.objectId);
+      const added = addTaskToDay(next.task, next.objectId, employee);
 
       if (!added) {
-        // Tag voll - neuen Tag starten
-        days.push(currentDay);
-        currentDay = createNewDay(days.length + 1);
-        // Trocknungsphasen werden über Nacht abgeschlossen
-        activeDryingPhases = [];
+        // Dieser Mitarbeiter kann nichts mehr hinzufügen
+        // Markiere als "voll" für heute
+        employee.currentDayMinutes = maxDayMinutes;
         continue;
       }
 
@@ -572,23 +823,32 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
         currentObjectIndex = (currentObjectIndex + 1) % objectIds.length;
       }
     } else {
-      // Kein Task verfügbar - entweder alle in Trocknung oder Tag voll (inkl. Überstunden)
-      if (currentDay.minutes >= maxDayMinutes * 0.95) {
-        // Tag ist fast voll (inkl. Überstunden)
-        // Überstunden-Info setzen
+      // Kein Task verfügbar für diesen Mitarbeiter
+      const allEmployeesFull = employeeSchedules.every(e => e.currentDayMinutes >= maxDayMinutes * 0.95);
+
+      if (allEmployeesFull) {
+        // Alle Mitarbeiter voll - Tag beenden
         currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
         currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
         days.push(currentDay);
         currentDay = createNewDay(days.length + 1);
+        employeeSchedules.forEach(e => {
+          e.currentDayMinutes = 0;
+          e.currentObjectId = null;
+        });
         activeDryingPhases = [];
       } else if (activeDryingPhases.length > 0) {
         // Trocknungszeit - Zeit vorspulen zur nächsten Aktivität
-        // oder Tag beenden wenn Trocknung über Nacht (auch mit Überstunden)
         const minDryingEnd = Math.min(...activeDryingPhases.map(d => d.endsAt));
 
         if (minDryingEnd <= maxDayMinutes) {
-          // Trocknung endet heute noch (evtl. mit Überstunden) - Zeit vorspulen
-          currentDay.minutes = minDryingEnd;
+          // Trocknung endet heute noch - Zeit für alle Mitarbeiter vorspulen
+          employeeSchedules.forEach(e => {
+            if (e.currentDayMinutes < minDryingEnd) {
+              e.currentDayMinutes = minDryingEnd;
+            }
+          });
+          currentDay.minutes = Math.max(...employeeSchedules.map(e => e.currentDayMinutes));
           currentDay.hours = currentDay.minutes / 60;
           activeDryingPhases = activeDryingPhases.filter(d => d.endsAt > currentDay.minutes);
         } else {
@@ -601,6 +861,8 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
 
           if (unfinishedOtherObjects.length > 0 && customerApproval) {
             // Es gibt noch Arbeit in anderen Räumen - weitermachen
+            // Markiere aktuellen Mitarbeiter als wartend
+            employee.currentDayMinutes = maxDayMinutes;
             continue;
           } else {
             // Tag beenden - Trocknung über Nacht
@@ -608,19 +870,33 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
             currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
             days.push(currentDay);
             currentDay = createNewDay(days.length + 1);
+            employeeSchedules.forEach(e => {
+              e.currentDayMinutes = 0;
+              e.currentObjectId = null;
+            });
             activeDryingPhases = [];
           }
         }
       } else {
-        // Keine Trocknungsphase und kein Task - sollte nicht passieren
-        // Sicherheitshalber neuen Tag starten
-        if (currentDay.tasks.length > 0) {
-          currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
-          currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
-          days.push(currentDay);
-          currentDay = createNewDay(days.length + 1);
-        } else {
-          break; // Verhindern von leeren Tagen
+        // Keine Trocknungsphase und kein Task für diesen Mitarbeiter
+        // Markiere Mitarbeiter als fertig für heute
+        employee.currentDayMinutes = maxDayMinutes;
+
+        // Prüfe ob ALLE Mitarbeiter fertig sind
+        const allEmployeesDone = employeeSchedules.every(e => e.currentDayMinutes >= maxDayMinutes);
+        if (allEmployeesDone) {
+          if (currentDay.tasks.length > 0) {
+            currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
+            currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
+            days.push(currentDay);
+            currentDay = createNewDay(days.length + 1);
+            employeeSchedules.forEach(e => {
+              e.currentDayMinutes = 0;
+              e.currentObjectId = null;
+            });
+          } else {
+            break; // Verhindern von leeren Tagen
+          }
         }
       }
     }
@@ -633,17 +909,11 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
     days.push(currentDay);
   }
 
-  // Schritt 3: Mitarbeiterberechnung
-  const totalHours = allTasks.reduce((sum, t) => sum + t.totalTime, 0) / 60;
-  const uniqueObjects = new Set(allTasks.map(t => t.objectId)).size;
-
-  const employeeResult = await calculateOptimalEmployeesAdvanced(
-    totalHours,
-    companySettings,
-    enrichedCalcs,
-    uniqueObjects,
-    customerApproval
-  );
+  // Mitarbeiter-Statistik zum employeeResult hinzufügen
+  employeeResult.reasoning.push({
+    type: 'result',
+    text: `Planung mit ${numberOfEmployees} Mitarbeiter(n): ${days.length} Arbeitstag(e) benötigt.`
+  });
 
   // Workflows in RxDB speichern
   await databaseService.deleteAllWorkflows();
@@ -651,19 +921,27 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
     await databaseService.saveWorkflow({
       day: day.day,
       hours: day.hours,
-      employees: employeeResult.optimalEmployees,
+      employees: numberOfEmployees,
       calculationIds: day.tasks.map(t => t.taskId),
       waitTimes: day.waitTimes,
-      parallelWork: []
+      parallelWork: day.tasks.filter(t => t.employeeId).map(t => ({
+        employeeId: t.employeeId,
+        employeeName: t.employeeName
+      }))
     });
   }
+
+  console.log(`📅 Workflow-Planung: ${days.length} Tage mit ${numberOfEmployees} Mitarbeiter(n)`);
 
   return {
     days,
     totalDays: days.length,
     totalHours,
-    optimalEmployees: employeeResult.optimalEmployees,
-    employeeExplanation: employeeResult.reasoning
+    optimalEmployees: numberOfEmployees,
+    employeeExplanation: employeeResult.reasoning,
+    // NEU: Mitarbeiter-Details
+    employeeCount: numberOfEmployees,
+    workPerEmployee: totalHours / numberOfEmployees
   };
 }
 

@@ -8,6 +8,7 @@ import { databaseService } from './databaseService';
 import { store } from '../store';
 import { setResults } from '../store/slices/calculationsSlice';
 import { defaultCompanySettings } from '../database/schemas/companySettingsSchema';
+import { WINDOW_SIZES } from '../constants';
 
 /**
  * Berechnet die Preise basierend auf Zeit, Stundenlohn und Material
@@ -44,8 +45,16 @@ function calculatePrice(finalTimeMinutes, quantity, service, companySettings) {
 function getQuantityForService(service, object, quantities) {
   // Für Fenster-Objekte: Anzahl aus dem Objekt verwenden
   if (object.objectCategory === 'fenster') {
-    if (service.unit === 'Stk') {
+    if (service.unit === 'Stk' || service.unit === 'Stk (m²)') {
       return object.windowCount || 1;
+    }
+    return 1;
+  }
+
+  // Für Tür-Objekte: Anzahl aus dem Objekt verwenden
+  if (object.objectCategory === 'tuer') {
+    if (service.unit === 'Stk') {
+      return object.doorCount || 1;
     }
     return 1;
   }
@@ -85,7 +94,8 @@ async function collectTotalQuantitiesPerService(objects) {
 
   for (const object of objects) {
     // Mengen für dieses Objekt berechnen
-    const quantities = object.objectCategory === 'fenster'
+    // Fenster und Türen brauchen keine Flächen, nur Stückzahlen
+    const quantities = (object.objectCategory === 'fenster' || object.objectCategory === 'tuer')
       ? { wallArea: 0, ceilingArea: 0, quantityFactor: 1, serviceFactor: 1 }
       : await calculateObjectQuantities(object);
 
@@ -221,7 +231,8 @@ export async function performCalculation() {
     };
 
     // Mengen berechnen (für Räume)
-    const quantities = object.objectCategory === 'fenster'
+    // Fenster und Türen brauchen keine Flächen, nur Stückzahlen
+    const quantities = (object.objectCategory === 'fenster' || object.objectCategory === 'tuer')
       ? { wallArea: 0, ceilingArea: 0, quantityFactor: 1, serviceFactor: 1, perimeter: 0 }
       : await calculateObjectQuantities(object);
     objectResult.quantities = quantities;
@@ -253,6 +264,7 @@ export async function performCalculation() {
     }
 
     const processedServiceIds = new Set();
+    const bundledServiceIds = new Set(); // Services die gebündelt wurden (nicht separat anzeigen)
 
     for (const serviceId of allServiceIds) {
       const allServices = await getServicesWithSubServices(serviceId);
@@ -264,6 +276,13 @@ export async function performCalculation() {
         const isSubService = svcIndex > 0;
 
         if (processedServiceIds.has(service.id)) continue;
+
+        // Skip services die bereits gebündelt wurden
+        if (bundledServiceIds.has(service.id)) {
+          console.log(`⏭️ ${service.title}: Bereits gebündelt, überspringe separate Berechnung`);
+          continue;
+        }
+
         processedServiceIds.add(service.id);
 
         // Menge für DIESES Objekt
@@ -271,6 +290,44 @@ export async function performCalculation() {
 
         // Baseline-Zeit
         let baseTime = await getBaselineTime(service.id, quantity);
+
+        // ========================================
+        // GEBÜNDELTE BERECHNUNG (bundleCalculation)
+        // ========================================
+        // Prüfe ob Unterleistungen mit bundleCalculation=true existieren
+        // Deren Zeit wird VOR der Effizienzberechnung addiert
+        const bundledServices = [];
+        let bundledTimeAdded = 0;
+
+        if (!isSubService) {
+          // Finde alle Unterleistungen die zu diesem Service gehören und bundleCalculation haben
+          for (let subIdx = 1; subIdx < allServices.length; subIdx++) {
+            const subService = allServices[subIdx];
+            if (subService.bundleCalculation === true) {
+              const subQuantity = getQuantityForService(subService, object, quantities);
+              const subBaseTime = await getBaselineTime(subService.id, subQuantity);
+
+              bundledTimeAdded += subBaseTime;
+              bundledServices.push({
+                id: subService.id,
+                title: subService.title,
+                time: subBaseTime,
+                quantity: subQuantity,
+                standardValuePerUnit: subService.standardValuePerUnit
+              });
+
+              // Markiere als gebündelt (wird nicht separat verarbeitet)
+              bundledServiceIds.add(subService.id);
+
+              console.log(`🔗 Bündelung: "${subService.title}" (${subBaseTime.toFixed(1)} min) → "${service.title}"`);
+            }
+          }
+
+          if (bundledTimeAdded > 0) {
+            console.log(`📦 Kombinierte Zeit für "${service.title}": ${baseTime.toFixed(1)} + ${bundledTimeAdded.toFixed(1)} = ${(baseTime + bundledTimeAdded).toFixed(1)} min`);
+            baseTime += bundledTimeAdded;
+          }
+        }
 
         // Sonderangaben-Faktoren
         let specialNoteFactor = 1;
@@ -284,6 +341,42 @@ export async function performCalculation() {
           }
         }
         baseTime = baseTime * specialNoteFactor;
+
+        // ========================================
+        // OBJEKTSPEZIFISCHE FAKTOREN
+        // ========================================
+        let objectSpecificFactor = 1;
+
+        // Fenster-Faktoren (nur für Fensterlackierung)
+        if (object.objectCategory === 'fenster' && service.id.includes('fensterfluegel')) {
+          // Fenstergrößen-Faktor (Klein=1.0, Mittel=1.5, Groß=2.5)
+          if (object.windowSize) {
+            const windowSizeConfig = WINDOW_SIZES.find(s => s.id === object.windowSize);
+            if (windowSizeConfig && windowSizeConfig.timeFactor) {
+              objectSpecificFactor *= windowSizeConfig.timeFactor;
+              console.log(`🪟 Fenstergrößen-Faktor (${object.windowSize}): ${windowSizeConfig.timeFactor}x`);
+            }
+          }
+
+          // Sprossenfenster-Faktor (2.5x)
+          if (object.hasSprossen) {
+            objectSpecificFactor *= 2.5;
+            console.log(`⚡ Sprossenfenster-Faktor: 2.5x`);
+          }
+        }
+
+        // Tür-Faktoren (nur für Türlackierung)
+        if (object.objectCategory === 'tuer' && service.id.includes('tuerfluegel')) {
+          // Kassettentüren-Faktor (1.5x)
+          if (object.hasKassette) {
+            objectSpecificFactor *= 1.5;
+            console.log(`⚡ Kassettentüren-Faktor: 1.5x`);
+          }
+        }
+
+        if (objectSpecificFactor !== 1) {
+          baseTime = baseTime * objectSpecificFactor;
+        }
 
         // ========================================
         // EFFIZIENZ aus Cache (kumuliert berechnet!)
@@ -311,7 +404,9 @@ export async function performCalculation() {
           totalCost: pricing.totalCost,
           factors: {
             quantityFactor: quantities.quantityFactor,
-            serviceFactor: quantities.serviceFactor
+            serviceFactor: quantities.serviceFactor,
+            specialNoteFactor: specialNoteFactor,
+            objectSpecificFactor: objectSpecificFactor
           },
           specialNotes: object.specialNotes || []
         });
@@ -369,6 +464,11 @@ export async function performCalculation() {
             stepsCalculated: efficiencyDetails.stepsCalculated || 0,
             reason: efficiencyDetails.reason || 'Keine Effizienzsteigerung'
           },
+          // === GEBÜNDELTE UNTERLEISTUNGEN ===
+          // Services deren Zeit in diese Leistung integriert wurde
+          hasBundledServices: bundledServices.length > 0,
+          bundledServices: bundledServices.length > 0 ? bundledServices : null,
+          bundledTimeAdded: bundledTimeAdded > 0 ? bundledTimeAdded : null,
           // === WORKFLOW ===
           workflowOrder: service.workflowOrder || 20,
           workflowPhase: service.workflowPhase || 'beschichtung',

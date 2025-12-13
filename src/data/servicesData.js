@@ -400,6 +400,10 @@ export const servicesData = [
         efficiencyCap: 240,
         efficiencyStepPercent: 1,
         createsDust: false,
+        // NEU: Berechnung wird mit Parent-Service kombiniert
+        // Zeit wird zum Parent addiert BEVOR Effizienz berechnet wird
+        bundleCalculation: true,
+        showInWorkflow: false, // Nicht separat im Ablaufplan anzeigen
         workflowOrder: 13,
         workflowPhase: 'beschichtung',
         workflowExplanation: 'Kleisterauftrag direkt VOR dem Tapezieren. Bei Vliestapeten wird die Wand eingekleistert, bei Papiertapeten die Bahn.',
@@ -706,9 +710,9 @@ export const servicesData = [
         efficiencyCap: 10,
         efficiencyStepPercent: 1,
         createsDust: true,
-        workflowOrder: 23,
-        workflowPhase: 'lackierung',
-        workflowExplanation: 'Erster Schritt beim Türen lackieren: Anschleifen für Haftung des neuen Lacks.',
+        workflowOrder: 5,
+        workflowPhase: 'untergrund',
+        workflowExplanation: 'Erster Schritt beim Türen lackieren: Anschleifen für Haftung. MUSS vor Wandanstrich erfolgen (Staubentwicklung).',
         workflowTip: null
     },
     {
@@ -727,15 +731,15 @@ export const servicesData = [
         materialStandard: '+22 %',
         materialType: 'percent',
         materialValue: 22,
-        waitTime: 420,
+        waitTime: 540,
         minTime: null,
         efficiencyStart: 3,
         efficiencyCap: 10,
         efficiencyStepPercent: 1,
         createsDust: false,
-        workflowOrder: 24,
+        workflowOrder: 8,
         workflowPhase: 'lackierung',
-        workflowExplanation: 'Grundierung nach dem Schleifen. Muss 7h trocknen bevor der Schlusslack aufgetragen wird.',
+        workflowExplanation: 'Grundierung nach dem Schleifen. Muss 9h trocknen bevor der Schlusslack aufgetragen wird.',
         workflowTip: null
     },
     {
@@ -817,9 +821,9 @@ export const servicesData = [
         efficiencyCap: null,
         efficiencyStepPercent: null,
         createsDust: true,
-        workflowOrder: 27,
-        workflowPhase: 'lackierung',
-        workflowExplanation: 'Kleine Fenster schleifen.',
+        workflowOrder: 5,
+        workflowPhase: 'untergrund',
+        workflowExplanation: 'Kleine Fenster schleifen. MUSS vor Wandanstrich erfolgen (Staubentwicklung).',
         workflowTip: null
     },
     {
@@ -844,8 +848,8 @@ export const servicesData = [
         efficiencyCap: null,
         efficiencyStepPercent: null,
         createsDust: false,
-        workflowOrder: 28,
-        workflowPhase: 'lackierung',
+        workflowOrder: 7,
+        workflowPhase: 'beschichtung',
         workflowExplanation: 'Kleine Fenster grundieren. 6h Trocknungszeit.',
         workflowTip: null
     },
@@ -929,9 +933,9 @@ export const servicesData = [
         efficiencyCap: null,
         efficiencyStepPercent: null,
         createsDust: true,
-        workflowOrder: 31,
-        workflowPhase: 'lackierung',
-        workflowExplanation: 'Fenster schleifen – erster Schritt der Lackierung.',
+        workflowOrder: 5,
+        workflowPhase: 'untergrund',
+        workflowExplanation: 'Fenster schleifen – erster Schritt der Lackierung. MUSS vor Wandanstrich erfolgen.',
         workflowTip: null
     },
     {
@@ -956,8 +960,8 @@ export const servicesData = [
         efficiencyCap: null,
         efficiencyStepPercent: null,
         createsDust: false,
-        workflowOrder: 32,
-        workflowPhase: 'lackierung',
+        workflowOrder: 7,
+        workflowPhase: 'beschichtung',
         workflowExplanation: 'Fenster grundieren nach Schleifen. 6h Trocknungszeit.',
         workflowTip: null
     },
@@ -1041,9 +1045,9 @@ export const servicesData = [
         efficiencyCap: null,
         efficiencyStepPercent: null,
         createsDust: true,
-        workflowOrder: 35,
-        workflowPhase: 'lackierung',
-        workflowExplanation: 'Große Fenster schleifen.',
+        workflowOrder: 5,
+        workflowPhase: 'untergrund',
+        workflowExplanation: 'Große Fenster schleifen. MUSS vor Wandanstrich erfolgen.',
         workflowTip: null
     },
     {
@@ -1068,8 +1072,8 @@ export const servicesData = [
         efficiencyCap: null,
         efficiencyStepPercent: null,
         createsDust: false,
-        workflowOrder: 36,
-        workflowPhase: 'lackierung',
+        workflowOrder: 7,
+        workflowPhase: 'beschichtung',
         workflowExplanation: 'Große Fenster grundieren. 6h Trocknungszeit.',
         workflowTip: null
     },
@@ -1153,9 +1157,9 @@ export const servicesData = [
         efficiencyCap: null,
         efficiencyStepPercent: null,
         createsDust: true,
-        workflowOrder: 39,
-        workflowPhase: 'lackierung',
-        workflowExplanation: 'Kleine Fenster außen schleifen.',
+        workflowOrder: 5,
+        workflowPhase: 'untergrund',
+        workflowExplanation: 'Kleine Fenster außen schleifen. MUSS vor Wandanstrich erfolgen.',
         workflowTip: null
     },
     {
@@ -1180,8 +1184,8 @@ export const servicesData = [
         efficiencyCap: null,
         efficiencyStepPercent: null,
         createsDust: false,
-        workflowOrder: 40,
-        workflowPhase: 'lackierung',
+        workflowOrder: 7,
+        workflowPhase: 'beschichtung',
         workflowExplanation: 'Kleine Fenster außen grundieren. 6h Trocknungszeit.',
         workflowTip: null
     },
@@ -1265,9 +1269,9 @@ export const servicesData = [
         efficiencyCap: null,
         efficiencyStepPercent: null,
         createsDust: true,
-        workflowOrder: 43,
-        workflowPhase: 'lackierung',
-        workflowExplanation: 'Fenster außen schleifen.',
+        workflowOrder: 5,
+        workflowPhase: 'untergrund',
+        workflowExplanation: 'Fenster außen schleifen. MUSS vor Wandanstrich erfolgen.',
         workflowTip: null
     },
     {
@@ -1292,8 +1296,8 @@ export const servicesData = [
         efficiencyCap: null,
         efficiencyStepPercent: null,
         createsDust: false,
-        workflowOrder: 44,
-        workflowPhase: 'lackierung',
+        workflowOrder: 7,
+        workflowPhase: 'beschichtung',
         workflowExplanation: 'Fenster außen grundieren – Wetterschutz-Grundierung empfohlen.',
         workflowTip: null
     },
@@ -1377,9 +1381,9 @@ export const servicesData = [
         efficiencyCap: null,
         efficiencyStepPercent: null,
         createsDust: true,
-        workflowOrder: 47,
-        workflowPhase: 'lackierung',
-        workflowExplanation: 'Große Fenster außen schleifen.',
+        workflowOrder: 5,
+        workflowPhase: 'untergrund',
+        workflowExplanation: 'Große Fenster außen schleifen. MUSS vor Wandanstrich erfolgen.',
         workflowTip: null
     },
     {
@@ -1404,8 +1408,8 @@ export const servicesData = [
         efficiencyCap: null,
         efficiencyStepPercent: null,
         createsDust: false,
-        workflowOrder: 48,
-        workflowPhase: 'lackierung',
+        workflowOrder: 7,
+        workflowPhase: 'beschichtung',
         workflowExplanation: 'Große Fenster außen grundieren. 6h Trocknungszeit.',
         workflowTip: null
     },

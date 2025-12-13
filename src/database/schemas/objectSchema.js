@@ -8,18 +8,24 @@ export const objectSchema = {
     type: { type: 'string' }, // 'Wohnzimmer', 'Flur', 'Bad', 'Treppenhaus', 'Küche'
     floorArea: { type: 'number' }, // Grundfläche in m²
     height: { type: 'number' }, // Raumhöhe in m
-    services: { 
-      type: 'array', 
-      items: { type: 'string' } 
+    services: {
+      type: 'array',
+      items: { type: 'string' }
     }, // Array von Service-IDs
-    specialNotes: { 
-      type: 'array', 
-      items: { type: 'string' } 
+    specialNotes: {
+      type: 'array',
+      items: { type: 'string' }
     }, // Array von SpecialService-IDs
+    // Fenster-spezifische Felder
+    hasSprossen: { type: 'boolean' }, // Sprossenfenster ja/nein (Faktor 2.5)
+    // Tür-spezifische Felder
+    hasKassette: { type: 'boolean' }, // Kassettentür ja/nein (Faktor 1.5)
+    // Zuordnung zu Raum
+    assignedToRoomId: { type: 'string' }, // ID des zugeordneten Raums (optional)
     createdAt: { type: 'number' },
     updatedAt: { type: 'number' }
   },
   required: ['id', 'name', 'type', 'floorArea', 'height'],
-  indexes: ['type']
+  indexes: ['type', 'assignedToRoomId']
 };
 

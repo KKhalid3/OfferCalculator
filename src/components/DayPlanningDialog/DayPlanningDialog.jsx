@@ -392,7 +392,19 @@ export default function DayPlanningDialog({
                     <td style="padding: 5px 6px; vertical-align: top;">
                       <div style="font-weight: 500; color: #222; font-size: 9px;">${
                         task.serviceName
-                      }</div>
+                      }${
+                      task.employeeId
+                        ? ` <span style="background: ${
+                            task.employeeId === 1
+                              ? "#1976d2"
+                              : task.employeeId === 2
+                              ? "#388e3c"
+                              : "#7b1fa2"
+                          }; color: white; padding: 1px 4px; border-radius: 2px; font-size: 7px; margin-left: 4px;">MA ${
+                            task.employeeId
+                          }</span>`
+                        : ""
+                    }</div>
                       ${
                         task.workflowPhaseName
                           ? `<div style="font-size: 8px; color: #888; margin-top: 1px;">${task.workflowPhaseName}</div>`
@@ -631,12 +643,22 @@ export default function DayPlanningDialog({
         const phase =
           workflowPhases[svc.workflowPhase] || workflowPhases.beschichtung;
 
+        // Service-Name mit gebündelten Unterleistungen
+        let displayName = svc.serviceName;
+        if (svc.hasBundledServices && svc.bundledServices?.length > 0) {
+          const bundledNames = svc.bundledServices
+            .map((b) => b.title)
+            .join(", ");
+          displayName = `${svc.serviceName} (inkl. ${bundledNames})`;
+        }
+
         const task = {
           id: `${obj.id}-${svc.serviceName}`,
           objectId: obj.id,
           objectName: obj.name,
           objectType: obj.type,
-          serviceName: svc.serviceName,
+          serviceName: displayName,
+          originalServiceName: svc.serviceName,
           totalTime: Math.round(svc.finalTime),
           remainingTime: Math.round(svc.finalTime),
           waitTime: Math.round(svc.waitTime || 0),
@@ -656,6 +678,10 @@ export default function DayPlanningDialog({
           createsDust: svc.createsDust || false,
           scheduled: false,
           isProjectTask: false,
+          // NEU: Gebündelte Unterleistungen Info
+          hasBundledServices: svc.hasBundledServices || false,
+          bundledServices: svc.bundledServices || null,
+          bundledTimeAdded: svc.bundledTimeAdded || null,
         };
 
         taskPool.push(task);
@@ -719,6 +745,38 @@ export default function DayPlanningDialog({
     let timeInDay = 0;
     let activeDryingPhases = []; // [{objectId, area, endsAt, serviceName}]
     let currentObjectIndex = 0;
+
+    // === NEU: MEHRPERSONAL-PLANUNG ===
+    const optimalEmployees = results?.optimalEmployees || 1;
+    const employeeColors = {
+      1: "#1976d2", // Blau
+      2: "#388e3c", // Grün
+      3: "#7b1fa2", // Lila
+      4: "#ff9800", // Orange
+      5: "#00796b", // Teal
+    };
+
+    // Mitarbeiter-Zeitslots für den aktuellen Tag
+    const employeeSchedules = [];
+    for (let i = 0; i < optimalEmployees; i++) {
+      employeeSchedules.push({
+        id: i + 1,
+        name: `MA ${i + 1}`,
+        currentDayMinutes: 0,
+        currentObjectId: null,
+      });
+    }
+
+    // Funktion: Finde den am wenigsten ausgelasteten Mitarbeiter
+    const getAvailableEmployee = () => {
+      const available = employeeSchedules
+        .filter((e) => e.currentDayMinutes < maxDayMinutes)
+        .sort((a, b) => a.currentDayMinutes - b.currentDayMinutes);
+      return available.length > 0 ? available[0] : employeeSchedules[0];
+    };
+
+    // Aktueller Mitarbeiter-Index (für Round-Robin bei gleicher Last)
+    let currentEmployeeIndex = 0;
 
     // Hilfsfunktion: Prüft ob Arbeit während Trocknungsphase möglich ist
     // otherTaskCreatesDust: ob die geplante Arbeit Staub erzeugt
@@ -1060,6 +1118,9 @@ export default function DayPlanningDialog({
 
       const isContinuation = task.totalTime !== task.remainingTime;
 
+      // === NEU: Mitarbeiter zuweisen ===
+      const assignedEmployee = getAvailableEmployee();
+
       const taskEntry = {
         ...task,
         startTime: timeInDay,
@@ -1076,7 +1137,18 @@ export default function DayPlanningDialog({
           : isPartial
           ? `Wird an Tag ${days.length + 2} fortgesetzt`
           : null,
+        // NEU: Mitarbeiter-Zuweisung
+        employeeId: optimalEmployees > 1 ? assignedEmployee.id : null,
+        employeeName: optimalEmployees > 1 ? assignedEmployee.name : null,
+        employeeColor:
+          optimalEmployees > 1 ? employeeColors[assignedEmployee.id] : null,
       };
+
+      // Mitarbeiter-Zeit aktualisieren
+      if (optimalEmployees > 1) {
+        assignedEmployee.currentDayMinutes += timeToSchedule;
+        assignedEmployee.currentObjectId = objectId;
+      }
 
       currentDay.tasks.push(taskEntry);
       currentDay.totalWorkTime += timeToSchedule;
@@ -1223,6 +1295,12 @@ export default function DayPlanningDialog({
       };
       timeInDay = 0;
       activeDryingPhases = []; // Über Nacht trocknen alle Oberflächen
+
+      // NEU: Mitarbeiter-Zeiten für neuen Tag zurücksetzen
+      employeeSchedules.forEach((e) => {
+        e.currentDayMinutes = 0;
+        e.currentObjectId = null;
+      });
     };
 
     // Hauptschleife: Tage optimal füllen
@@ -1543,6 +1621,39 @@ export default function DayPlanningDialog({
               {optimalEmployees}
             </div>
             <div style={{ fontSize: "12px", color: "#666" }}>Mitarbeiter</div>
+            {/* Mitarbeiter-Legende wenn mehr als 1 */}
+            {optimalEmployees > 1 && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: "6px",
+                  marginTop: "4px",
+                  flexWrap: "wrap",
+                }}
+              >
+                {Array.from({ length: optimalEmployees }, (_, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      background:
+                        i === 0
+                          ? "#1976d2"
+                          : i === 1
+                          ? "#388e3c"
+                          : i === 2
+                          ? "#7b1fa2"
+                          : "#ff9800",
+                      color: "white",
+                      padding: "1px 4px",
+                      borderRadius: "3px",
+                      fontSize: "9px",
+                    }}
+                  >
+                    MA {i + 1}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <div
@@ -1904,9 +2015,22 @@ export default function DayPlanningDialog({
                         const leftPercent =
                           (task.startTime / MINUTES_PER_DAY) * 100;
 
-                        let bgColor = "#4CAF50";
-                        if (task.isSubService) bgColor = "#7E57C2";
-                        else if (task.isFromSpecialNote) bgColor = "#FF7043";
+                        // Farben basierend auf Mitarbeiter-ID
+                        const employeeColors = {
+                          1: "#1976d2", // Blau
+                          2: "#388e3c", // Grün
+                          3: "#7b1fa2", // Lila
+                          4: "#ff9800", // Orange
+                          5: "#00796b", // Teal
+                        };
+
+                        let bgColor = task.employeeId
+                          ? employeeColors[task.employeeId] || "#4CAF50"
+                          : "#4CAF50";
+                        if (task.isSubService && !task.employeeId)
+                          bgColor = "#7E57C2";
+                        else if (task.isFromSpecialNote && !task.employeeId)
+                          bgColor = "#FF7043";
 
                         return (
                           <div
@@ -1927,13 +2051,19 @@ export default function DayPlanningDialog({
                               whiteSpace: "nowrap",
                               boxSizing: "border-box",
                             }}
-                            title={`${task.serviceName} (${
-                              task.objectName
-                            }) - ${formatTime(taskDuration)}${
+                            title={`${task.serviceName} (${task.objectName})${
+                              task.employeeId ? ` - MA ${task.employeeId}` : ""
+                            } - ${formatTime(taskDuration)}${
                               task.isPartial ? " (wird fortgesetzt)" : ""
                             }${task.isContinuation ? " (Fortsetzung)" : ""}`}
                           >
-                            {widthPercent > 12 ? task.serviceName : ""}
+                            {widthPercent > 12
+                              ? `${
+                                  task.employeeId
+                                    ? `MA${task.employeeId}: `
+                                    : ""
+                                }${task.serviceName}`
+                              : ""}
                           </div>
                         );
                       })}
@@ -2034,6 +2164,29 @@ export default function DayPlanningDialog({
                                 {task.workflowPhaseIcon}{" "}
                                 {task.workflowPhaseName}
                               </span>
+                              {/* NEU: Mitarbeiter-Badge */}
+                              {task.employeeId && (
+                                <span
+                                  style={{
+                                    background:
+                                      task.employeeId === 1
+                                        ? "#1976d2"
+                                        : task.employeeId === 2
+                                        ? "#388e3c"
+                                        : task.employeeId === 3
+                                        ? "#7b1fa2"
+                                        : "#ff9800",
+                                    color: "white",
+                                    padding: "1px 6px",
+                                    borderRadius: "3px",
+                                    marginRight: "8px",
+                                    fontSize: "10px",
+                                  }}
+                                >
+                                  👷{" "}
+                                  {task.employeeName || `MA ${task.employeeId}`}
+                                </span>
+                              )}
                               <span
                                 style={{
                                   background: "#f0f0f0",
@@ -2078,6 +2231,30 @@ export default function DayPlanningDialog({
                                 </span>
                               )}
                             </div>
+
+                            {/* Gebündelte Unterleistungen Anzeige */}
+                            {task.hasBundledServices &&
+                              task.bundledServices && (
+                                <div
+                                  style={{
+                                    fontSize: "11px",
+                                    color: "#7b1fa2",
+                                    marginTop: "4px",
+                                    padding: "4px 8px",
+                                    background: "#f3e5f5",
+                                    borderRadius: "4px",
+                                    display: "inline-block",
+                                  }}
+                                >
+                                  📦 Inkl.:{" "}
+                                  {task.bundledServices
+                                    .map(
+                                      (b) =>
+                                        `${b.title} (${b.standardValuePerUnit} min/${task.unit})`
+                                    )
+                                    .join(", ")}
+                                </div>
+                              )}
 
                             {/* Unterleistungs-Schritt Anzeige */}
                             {task.subWorkflowOrder && task.subWorkflowTotal && (

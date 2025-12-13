@@ -128,6 +128,11 @@ export default function ServiceSelector() {
     return selectableServices.filter((s) => s.id.includes("fensterfluegel"));
   }, [selectableServices]);
 
+  // Tür-Services
+  const doorServices = useMemo(() => {
+    return selectableServices.filter((s) => s.id.includes("tuerfluegel"));
+  }, [selectableServices]);
+
   // Finde Unterleistungen für eine gegebene Service-ID
   const getSubServicesForService = (serviceId) => {
     return services.filter(
@@ -146,7 +151,15 @@ export default function ServiceSelector() {
     console.log("Auswählbare Services:", selectableServices.length);
     console.log("Raum-Services:", roomServices.length);
     console.log("Fenster-Services:", windowServices.length);
-  }, [services, categories, selectableServices, roomServices, windowServices]);
+    console.log("Tür-Services:", doorServices.length);
+  }, [
+    services,
+    categories,
+    selectableServices,
+    roomServices,
+    windowServices,
+    doorServices,
+  ]);
 
   const handleServiceToggle = (objectId, serviceId) => {
     const object = objects.find((obj) => obj.id === objectId);
@@ -196,6 +209,7 @@ export default function ServiceSelector() {
   const windowObjects = objects.filter(
     (obj) => obj.objectCategory === "fenster"
   );
+  const doorObjects = objects.filter((obj) => obj.objectCategory === "tuer");
 
   return (
     <div className="card">
@@ -539,12 +553,158 @@ export default function ServiceSelector() {
         </div>
       )}
 
-      {roomObjects.length === 0 && windowObjects.length === 0 && (
-        <p>
-          Keine Objekte vorhanden. Bitte fügen Sie zuerst Räume oder Fenster
-          hinzu.
-        </p>
+      {/* Tür-Objekte */}
+      {doorObjects.length > 0 && (
+        <div style={{ marginTop: "30px" }}>
+          <h3
+            style={{
+              fontSize: "14px",
+              color: "#8d6e63",
+              borderBottom: "1px solid #d7ccc8",
+              paddingBottom: "8px",
+              marginBottom: "15px",
+            }}
+          >
+            🚪 Türen
+          </h3>
+
+          {doorObjects.map((obj) => {
+            return (
+              <div
+                key={obj.id}
+                style={{
+                  marginBottom: "20px",
+                  padding: "15px",
+                  background: "#fbe9e7",
+                  borderRadius: "4px",
+                  borderLeft: "4px solid #8d6e63",
+                }}
+              >
+                <h4 style={{ margin: "0 0 10px 0" }}>
+                  {obj.name}
+                  <span
+                    style={{
+                      color: "#666",
+                      fontSize: "12px",
+                      marginLeft: "10px",
+                    }}
+                  >
+                    {obj.doorCount || 1}× Tür
+                  </span>
+                  {obj.hasKassette && (
+                    <span
+                      style={{
+                        marginLeft: "8px",
+                        padding: "2px 8px",
+                        background: "#ffcc80",
+                        borderRadius: "4px",
+                        fontSize: "11px",
+                      }}
+                    >
+                      ⚡ Kassettentür
+                    </span>
+                  )}
+                </h4>
+
+                {doorServices.length === 0 ? (
+                  <p style={{ color: "#666", fontSize: "13px" }}>
+                    Keine Tür-Leistungen verfügbar.
+                  </p>
+                ) : (
+                  <div>
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: "#666",
+                        marginBottom: "10px",
+                      }}
+                    >
+                      📋 Verfügbare Leistungen für Türen:
+                    </p>
+                    {doorServices.map((service) => {
+                      const isSelected = (obj.services || []).includes(
+                        service.id
+                      );
+                      const subServices = getSubServicesForService(service.id);
+                      return (
+                        <div key={service.id} style={{ marginBottom: "10px" }}>
+                          <label
+                            style={{
+                              display: "block",
+                              fontWeight: isSelected ? "bold" : "normal",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() =>
+                                handleServiceToggle(obj.id, service.id)
+                              }
+                            />
+                            <span style={{ marginLeft: "8px" }}>
+                              {service.title}
+                            </span>
+                            <span
+                              style={{
+                                marginLeft: "8px",
+                                color: "#888",
+                                fontSize: "12px",
+                              }}
+                            >
+                              ({service.unit})
+                            </span>
+                          </label>
+
+                          {isSelected && subServices.length > 0 && (
+                            <div
+                              style={{
+                                marginLeft: "28px",
+                                marginTop: "6px",
+                                padding: "8px",
+                                background: "#fff",
+                                borderRadius: "4px",
+                                borderLeft: "3px solid #8d6e63",
+                                fontSize: "12px",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  color: "#6d4c41",
+                                  marginBottom: "4px",
+                                  fontWeight: "bold",
+                                }}
+                              >
+                                ✓ Enthaltene Schritte:
+                              </div>
+                              {subServices.map((sub) => (
+                                <div
+                                  key={sub.id}
+                                  style={{ color: "#555", padding: "2px 0" }}
+                                >
+                                  • {sub.title}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
+
+      {roomObjects.length === 0 &&
+        windowObjects.length === 0 &&
+        doorObjects.length === 0 && (
+          <p>
+            Keine Objekte vorhanden. Bitte fügen Sie zuerst Räume, Fenster oder
+            Türen hinzu.
+          </p>
+        )}
     </div>
   );
 }

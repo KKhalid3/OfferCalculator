@@ -19,24 +19,16 @@ export const ROOM_SHAPES = [
 ];
 
 // Fenstergrößen für Stück-basierte Kalkulation
+// Faktoren: Klein = 1.0, Mittel = 1.5, Groß = 2.5 (laut Anforderung)
 export const WINDOW_SIZES = [
-  { id: 'klein', name: 'Klein (≤ 1 m²)', maxArea: 1, timeFactor: 0.67 },
-  { id: 'mittel', name: 'Mittel (≤ 1,5 m²)', maxArea: 1.5, timeFactor: 1.0 },
-  { id: 'gross', name: 'Groß (≤ 2 m²)', maxArea: 2, timeFactor: 1.33 }
-];
-
-// Türtypen für Stück-basierte Kalkulation
-export const DOOR_TYPES = [
-  { id: 'zimmertuer', name: 'Zimmertür', timeFactor: 1.0 },
-  { id: 'haustuer', name: 'Haustür', timeFactor: 1.5 },
-  { id: 'badtuer', name: 'Badtür', timeFactor: 1.0 },
-  { id: 'kellertuer', name: 'Kellertür', timeFactor: 1.2 }
+  { id: 'klein', name: 'Klein (≤ 1 m²)', maxArea: 1, timeFactor: 1.0 },
+  { id: 'mittel', name: 'Mittel (≤ 1,5 m²)', maxArea: 1.5, timeFactor: 1.5 },
+  { id: 'gross', name: 'Groß (≤ 2 m²)', maxArea: 2, timeFactor: 2.5 }
 ];
 
 // Türgrößen für Stück-basierte Kalkulation
 export const DOOR_SIZES = [
-  { id: 'einfach', name: 'Einfach (Standard)', sizeFactor: 1.0 },
-  { id: 'doppel', name: 'Doppelflügelig', sizeFactor: 1.8 }
+  { id: 'einfach', name: 'Einfach (Standard)', sizeFactor: 1.0 }
 ];
 
 // Objektkategorien für unterschiedliche Eingabeformulare

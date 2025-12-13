@@ -9,7 +9,6 @@ import {
   OBJECT_TYPES,
   ROOM_SHAPES,
   WINDOW_SIZES,
-  DOOR_TYPES,
   DOOR_SIZES,
   OBJECT_CATEGORIES,
 } from "../../constants";
@@ -32,12 +31,18 @@ export default function ObjectSelector() {
     windowSize: "mittel",
     windowCount: "1",
     windowLocation: "innen",
+    hasSprossen: false,
+    assignedToRoomId: "",
     // Tür-Felder
-    doorType: "zimmertuer",
     doorSize: "einfach",
     doorCount: "1",
-    doorLocation: "innen",
+    hasKassette: false,
   });
+
+  // Verfügbare Räume für Zuordnung
+  const availableRooms = objects.filter(
+    (obj) => !obj.objectCategory || obj.objectCategory === "raum"
+  );
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -85,6 +90,8 @@ export default function ObjectSelector() {
           windowMaxArea: windowSizeConfig.maxArea,
           windowCount: parseInt(formData.windowCount) || 1,
           windowLocation: formData.windowLocation,
+          hasSprossen: formData.hasSprossen || false,
+          assignedToRoomId: formData.assignedToRoomId || null,
           unit: "Stk",
           services: [],
           specialNotes: [],
@@ -96,8 +103,6 @@ export default function ObjectSelector() {
         return;
       }
 
-      const doorTypeConfig =
-        DOOR_TYPES.find((t) => t.id === formData.doorType) || DOOR_TYPES[0];
       const doorSizeConfig =
         DOOR_SIZES.find((s) => s.id === formData.doorSize) || DOOR_SIZES[0];
 
@@ -106,14 +111,12 @@ export default function ObjectSelector() {
           name: formData.name,
           type: "Tür",
           objectCategory: "tuer",
-          doorType: formData.doorType,
-          doorTypeLabel: doorTypeConfig.name,
-          doorTimeFactor: doorTypeConfig.timeFactor,
           doorSize: formData.doorSize,
           doorSizeLabel: doorSizeConfig.name,
           doorSizeFactor: doorSizeConfig.sizeFactor,
           doorCount: parseInt(formData.doorCount) || 1,
-          doorLocation: formData.doorLocation,
+          hasKassette: formData.hasKassette || false,
+          assignedToRoomId: formData.assignedToRoomId || null,
           unit: "Stk",
           services: [],
           specialNotes: [],
@@ -131,10 +134,11 @@ export default function ObjectSelector() {
       windowSize: "mittel",
       windowCount: "1",
       windowLocation: "innen",
-      doorType: "zimmertuer",
+      hasSprossen: false,
+      assignedToRoomId: "",
       doorSize: "einfach",
       doorCount: "1",
-      doorLocation: "innen",
+      hasKassette: false,
     });
   };
 
@@ -337,54 +341,59 @@ export default function ObjectSelector() {
                 Außenfenster benötigen wetterfesten Lack
               </small>
             </div>
+
+            <div className="form-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={formData.hasSprossen}
+                  onChange={(e) =>
+                    setFormData({ ...formData, hasSprossen: e.target.checked })
+                  }
+                  style={{ marginRight: "8px" }}
+                />
+                Sprossenfenster (erhöhter Zeitaufwand)
+              </label>
+              <small
+                style={{ color: "#666", display: "block", marginTop: "4px" }}
+              >
+                Sprossenfenster erfordern mehr Zeit durch zusätzliche Flächen
+              </small>
+            </div>
+
+            {availableRooms.length > 0 && (
+              <div className="form-group">
+                <label>Zu Raum zuordnen (optional):</label>
+                <select
+                  value={formData.assignedToRoomId}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      assignedToRoomId: e.target.value,
+                    })
+                  }
+                >
+                  <option value="">— Keine Zuordnung —</option>
+                  {availableRooms.map((room) => (
+                    <option key={room.id} value={room.id}>
+                      {room.name} ({room.type})
+                    </option>
+                  ))}
+                </select>
+                <small
+                  style={{ color: "#666", display: "block", marginTop: "4px" }}
+                >
+                  Optional: Fenster einem Raum zuordnen, wenn dieser auch
+                  renoviert wird
+                </small>
+              </div>
+            )}
           </>
         )}
 
         {/* Tür-spezifische Felder */}
         {objectCategory === "tuer" && (
           <>
-            <div className="form-group">
-              <label>Türtyp:</label>
-              <select
-                value={formData.doorType}
-                onChange={(e) =>
-                  setFormData({ ...formData, doorType: e.target.value })
-                }
-              >
-                {DOOR_TYPES.map((type) => (
-                  <option key={type.id} value={type.id}>
-                    {type.name}
-                  </option>
-                ))}
-              </select>
-              <small
-                style={{ color: "#666", display: "block", marginTop: "4px" }}
-              >
-                Haustüren benötigen mehr Zeit als Zimmertüren
-              </small>
-            </div>
-
-            <div className="form-group">
-              <label>Türgröße:</label>
-              <select
-                value={formData.doorSize}
-                onChange={(e) =>
-                  setFormData({ ...formData, doorSize: e.target.value })
-                }
-          >
-                {DOOR_SIZES.map((size) => (
-                  <option key={size.id} value={size.id}>
-                    {size.name}
-                  </option>
-                ))}
-              </select>
-              <small
-                style={{ color: "#666", display: "block", marginTop: "4px" }}
-              >
-                Doppelflügelige Türen benötigen ca. 80% mehr Zeit
-              </small>
-            </div>
-
             <div className="form-group">
               <label>Anzahl (Stück):</label>
               <input
@@ -400,23 +409,51 @@ export default function ObjectSelector() {
             </div>
 
             <div className="form-group">
-              <label>Seite:</label>
-              <select
-                value={formData.doorLocation}
-                onChange={(e) =>
-                  setFormData({ ...formData, doorLocation: e.target.value })
-                }
-              >
-                <option value="innen">Innen</option>
-                <option value="aussen">Außen</option>
-                <option value="beide">Beide Seiten</option>
-              </select>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={formData.hasKassette}
+                  onChange={(e) =>
+                    setFormData({ ...formData, hasKassette: e.target.checked })
+                  }
+                  style={{ marginRight: "8px" }}
+                />
+                Kassettentür (erhöhter Zeitaufwand)
+              </label>
               <small
                 style={{ color: "#666", display: "block", marginTop: "4px" }}
               >
-                Außentüren benötigen wetterfesten Lack
+                Kassettentüren erfordern mehr Zeit durch zusätzliche Flächen
               </small>
-          </div>
+            </div>
+
+            {availableRooms.length > 0 && (
+              <div className="form-group">
+                <label>Zu Raum zuordnen (optional):</label>
+                <select
+                  value={formData.assignedToRoomId}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      assignedToRoomId: e.target.value,
+                    })
+                  }
+                >
+                  <option value="">— Keine Zuordnung —</option>
+                  {availableRooms.map((room) => (
+                    <option key={room.id} value={room.id}>
+                      {room.name} ({room.type})
+                    </option>
+                  ))}
+                </select>
+                <small
+                  style={{ color: "#666", display: "block", marginTop: "4px" }}
+                >
+                  Optional: Tür einem Raum zuordnen, wenn dieser auch renoviert
+                  wird
+                </small>
+              </div>
+            )}
           </>
         )}
 
@@ -480,6 +517,20 @@ export default function ObjectSelector() {
                       <span style={{ marginLeft: "10px", color: "#666" }}>
                         {obj.windowCount}× {obj.windowSizeLabel}
                       </span>
+                      {obj.hasSprossen && (
+                        <span
+                          style={{
+                            marginLeft: "8px",
+                            padding: "2px 8px",
+                            background: "#fff3e0",
+                            borderRadius: "4px",
+                            fontSize: "11px",
+                            color: "#e65100",
+                          }}
+                        >
+                          ⚡ Sprossenfenster
+                        </span>
+                      )}
                       <span
                         style={{
                           marginLeft: "10px",
@@ -498,6 +549,24 @@ export default function ObjectSelector() {
                           ? "Außen"
                           : "Beide Seiten"}
                       </span>
+                      {obj.assignedToRoomId && (
+                        <span
+                          style={{
+                            marginLeft: "10px",
+                            padding: "2px 8px",
+                            background: "#e1f5fe",
+                            borderRadius: "4px",
+                            fontSize: "11px",
+                            color: "#0277bd",
+                          }}
+                        >
+                          🏠{" "}
+                          {
+                            objects.find((r) => r.id === obj.assignedToRoomId)
+                              ?.name
+                          }
+                        </span>
+                      )}
                     </>
                   )}
 
@@ -506,37 +575,40 @@ export default function ObjectSelector() {
                     <>
                       <strong>🚪 {obj.name}</strong>
                       <span style={{ marginLeft: "10px", color: "#666" }}>
-                        {obj.doorCount}× {obj.doorTypeLabel}
+                        {obj.doorCount}×
                       </span>
-                      <span
-                        style={{
-                          marginLeft: "10px",
-                          padding: "2px 8px",
-                          background: "#e1bee7",
-                          borderRadius: "4px",
-                          fontSize: "12px",
-                        }}
-                      >
-                        {obj.doorSizeLabel}
-                      </span>
-                      <span
-                        style={{
-                          marginLeft: "10px",
-                          padding: "2px 8px",
-                          background:
-                            obj.doorLocation === "aussen"
-                              ? "#ffecb3"
-                              : "#c8e6c9",
-                          borderRadius: "4px",
-                          fontSize: "12px",
-                        }}
-                      >
-                        {obj.doorLocation === "innen"
-                          ? "Innen"
-                          : obj.doorLocation === "aussen"
-                          ? "Außen"
-                          : "Beide Seiten"}
-                      </span>
+                      {obj.hasKassette && (
+                        <span
+                          style={{
+                            marginLeft: "8px",
+                            padding: "2px 8px",
+                            background: "#fff3e0",
+                            borderRadius: "4px",
+                            fontSize: "11px",
+                            color: "#e65100",
+                          }}
+                        >
+                          ⚡ Kassettentür
+                        </span>
+                      )}
+                      {obj.assignedToRoomId && (
+                        <span
+                          style={{
+                            marginLeft: "10px",
+                            padding: "2px 8px",
+                            background: "#e1f5fe",
+                            borderRadius: "4px",
+                            fontSize: "11px",
+                            color: "#0277bd",
+                          }}
+                        >
+                          🏠{" "}
+                          {
+                            objects.find((r) => r.id === obj.assignedToRoomId)
+                              ?.name
+                          }
+                        </span>
+                      )}
                     </>
                   )}
                 </div>

@@ -60,6 +60,11 @@ export const serviceSchema = {
     // === Stauberzeugung ===
     createsDust: { type: ['boolean', 'null'] }, // Erzeugt diese Leistung Staub? (verhindert Parallelarbeit bei Trocknungsphasen)
 
+    // === Gebündelte Berechnung ===
+    // Für Unterleistungen die mit ihrer Hauptleistung kombiniert werden sollen (z.B. Kleisterauftrag + Tapezieren)
+    bundleCalculation: { type: ['boolean', 'null'] }, // Zeit wird zum Parent-Service addiert BEVOR Effizienz berechnet wird
+    showInWorkflow: { type: ['boolean', 'null'] },    // Im Ablaufplan separat anzeigen? (false = wird mit Parent zusammengefasst)
+
     createdAt: { type: 'number' },
     updatedAt: { type: 'number' }
   },
