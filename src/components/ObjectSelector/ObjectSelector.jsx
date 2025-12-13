@@ -267,20 +267,214 @@ export default function ObjectSelector() {
                   setFormData({ ...formData, roomShape: e.target.value })
                 }
               >
-                {ROOM_SHAPES.map((shape) => (
-                  <option key={shape.id} value={shape.id}>
-                    {shape.name}{" "}
-                    {shape.factor !== 1.0
-                      ? `(+${Math.round((shape.factor - 1) * 100)}% Umfang)`
-                      : ""}
-                  </option>
-                ))}
+                {ROOM_SHAPES.map((shape) => {
+                  let description = "";
+                  if (shape.id === "standard") {
+                    description = "";
+                  } else if (shape.id === "schlauch") {
+                    description = " (+20% Umfang, wie Flur)";
+                  } else if (shape.id === "l_shape") {
+                    description = " (+40% nur auf Wandfläche)";
+                  }
+                  return (
+                    <option key={shape.id} value={shape.id}>
+                      {shape.name}
+                      {description}
+                    </option>
+                  );
+                })}
               </select>
-              <small
-                style={{ color: "#666", display: "block", marginTop: "4px" }}
-              >
-                L-förmige Räume haben bei gleicher Grundfläche mehr Wandfläche
-              </small>
+
+              {/* Dynamischer Text basierend auf gewählter Raumform */}
+              {(() => {
+                const selectedShape = ROOM_SHAPES.find(
+                  (s) => s.id === formData.roomShape
+                );
+                if (!selectedShape) return null;
+
+                let description = "";
+                if (selectedShape.id === "standard") {
+                  description = "Kein Faktor - Standard rechteckiger Raum";
+                } else if (selectedShape.id === "schlauch") {
+                  description =
+                    "+20% Umfang (wie Flur) - Länglicher Raum mit mehr Wandfläche";
+                } else if (selectedShape.id === "l_shape") {
+                  description =
+                    "+40% nur auf Wandfläche - L-förmiger Raum hat bei gleicher Grundfläche mehr Wandfläche";
+                }
+
+                return (
+                  <>
+                    {/* Visuelle Darstellung */}
+                    <div
+                      style={{
+                        marginTop: "4px",
+                        marginBottom: "4px",
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        height: "100px",
+                        width: "fit-content",
+                        maxWidth: "140px",
+                        margin: "4px 0",
+                        padding: "10px 20px",
+                        background:
+                          "linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)",
+                        borderRadius: "8px",
+                        border: "1px solid #dee2e6",
+                        boxShadow: "inset 0 2px 4px rgba(0,0,0,0.06)",
+                      }}
+                    >
+                      {selectedShape.id === "standard" && (
+                        <svg width="100" height="100" viewBox="0 0 100 100">
+                          <defs>
+                            <filter id="shadow">
+                              <feGaussianBlur
+                                in="SourceAlpha"
+                                stdDeviation="2"
+                              />
+                              <feOffset dx="2" dy="2" result="offsetblur" />
+                              <feComponentTransfer>
+                                <feFuncA type="linear" slope="0.3" />
+                              </feComponentTransfer>
+                              <feMerge>
+                                <feMergeNode />
+                                <feMergeNode in="SourceGraphic" />
+                              </feMerge>
+                            </filter>
+                            <linearGradient
+                              id="squareGradient"
+                              x1="0%"
+                              y1="0%"
+                              x2="100%"
+                              y2="100%"
+                            >
+                              <stop
+                                offset="0%"
+                                style={{ stopColor: "#66BB6A", stopOpacity: 1 }}
+                              />
+                              <stop
+                                offset="100%"
+                                style={{ stopColor: "#4CAF50", stopOpacity: 1 }}
+                              />
+                            </linearGradient>
+                          </defs>
+                          <rect
+                            x="25"
+                            y="25"
+                            width="50"
+                            height="50"
+                            fill="url(#squareGradient)"
+                            stroke="#2E7D32"
+                            strokeWidth="2.5"
+                            filter="url(#shadow)"
+                            rx="2"
+                          />
+                        </svg>
+                      )}
+                      {selectedShape.id === "schlauch" && (
+                        <svg width="120" height="80" viewBox="0 0 120 80">
+                          <defs>
+                            <filter id="shadowRect">
+                              <feGaussianBlur
+                                in="SourceAlpha"
+                                stdDeviation="2"
+                              />
+                              <feOffset dx="2" dy="2" result="offsetblur" />
+                              <feComponentTransfer>
+                                <feFuncA type="linear" slope="0.3" />
+                              </feComponentTransfer>
+                              <feMerge>
+                                <feMergeNode />
+                                <feMergeNode in="SourceGraphic" />
+                              </feMerge>
+                            </filter>
+                            <linearGradient
+                              id="rectGradient"
+                              x1="0%"
+                              y1="0%"
+                              x2="100%"
+                              y2="100%"
+                            >
+                              <stop
+                                offset="0%"
+                                style={{ stopColor: "#64B5F6", stopOpacity: 1 }}
+                              />
+                              <stop
+                                offset="100%"
+                                style={{ stopColor: "#2196F3", stopOpacity: 1 }}
+                              />
+                            </linearGradient>
+                          </defs>
+                          <rect
+                            x="10"
+                            y="25"
+                            width="100"
+                            height="30"
+                            fill="url(#rectGradient)"
+                            stroke="#1565C0"
+                            strokeWidth="2.5"
+                            filter="url(#shadowRect)"
+                            rx="2"
+                          />
+                        </svg>
+                      )}
+                      {selectedShape.id === "l_shape" && (
+                        <svg width="100" height="100" viewBox="0 0 100 100">
+                          <defs>
+                            <filter id="shadowL">
+                              <feGaussianBlur
+                                in="SourceAlpha"
+                                stdDeviation="2"
+                              />
+                              <feOffset dx="2" dy="2" result="offsetblur" />
+                              <feComponentTransfer>
+                                <feFuncA type="linear" slope="0.3" />
+                              </feComponentTransfer>
+                              <feMerge>
+                                <feMergeNode />
+                                <feMergeNode in="SourceGraphic" />
+                              </feMerge>
+                            </filter>
+                            <linearGradient
+                              id="lGradient"
+                              x1="0%"
+                              y1="0%"
+                              x2="100%"
+                              y2="100%"
+                            >
+                              <stop
+                                offset="0%"
+                                style={{ stopColor: "#FFB74D", stopOpacity: 1 }}
+                              />
+                              <stop
+                                offset="100%"
+                                style={{ stopColor: "#FF9800", stopOpacity: 1 }}
+                              />
+                            </linearGradient>
+                          </defs>
+                          <path
+                            d="M 15 15 L 55 15 L 55 45 L 85 45 L 85 85 L 15 85 Z"
+                            fill="url(#lGradient)"
+                            stroke="#E65100"
+                            strokeWidth="2.5"
+                            filter="url(#shadowL)"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                    <small
+                      style={{
+                        color: "#666",
+                        display: "block",
+                        marginTop: "4px",
+                      }}
+                    >
+                      {description}
+                    </small>
+                  </>
+                );
+              })()}
             </div>
           </>
         )}

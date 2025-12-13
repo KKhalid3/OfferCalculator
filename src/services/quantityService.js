@@ -50,23 +50,25 @@ export async function calculateObjectQuantities(object) {
     }
   }
 
-  // Raumform-Faktor (L-förmig = 1.4x mehr Umfang bei gleicher Grundfläche)
+  // Raumform-Faktor (L-förmig = +40% nur auf Wandfläche, nicht auf Umfang)
   const roomShapeFactor = object.roomShapeFactor || 1;
   if (roomShapeFactor !== 1) {
-    console.log(`📐 Raumform-Faktor (L-förmig): ${roomShapeFactor}x (für Umfang)`);
+    console.log(`📐 Raumform-Faktor: ${roomShapeFactor}x (nur für Wandfläche)`);
   }
 
-  // Kombinierter Umfang-Faktor (Raumtyp + Raumform)
-  const combinedQuantityFactor = quantityFactor * roomShapeFactor;
+  // Umfang: nur mit Raumtyp-Faktor (quantityFactor), NICHT mit Raumform-Faktor
+  const adjustedPerimeter = perimeter * quantityFactor;
 
-  // Schritt 6: Wandfläche mit Faktor
-  const wallArea = calculateWallAreaWithFactor(perimeter, object.height, combinedQuantityFactor);
+  // Wandfläche: mit beiden Faktoren (Raumtyp + Raumform)
+  const wallAreaFactor = quantityFactor * roomShapeFactor;
+  const wallArea = calculateWallAreaWithFactor(perimeter, object.height, wallAreaFactor);
 
   const result = {
     ceilingArea,
-    perimeter: perimeter * combinedQuantityFactor, // Angepasster Umfang
+    perimeter: adjustedPerimeter, // Nur Raumtyp-Faktor, kein Raumform-Faktor
     wallArea,
-    quantityFactor: combinedQuantityFactor,
+    quantityFactor: quantityFactor, // Nur Raumtyp-Faktor
+    wallAreaFactor: wallAreaFactor, // Kombiniert für Wandfläche
     serviceFactor,
     roomShapeFactor,
     // Zusätzliche Transparenz
@@ -77,7 +79,7 @@ export async function calculateObjectQuantities(object) {
     }
   };
 
-  console.log(`📊 Objekt "${object.name}" (${object.type}): Decke ${ceilingArea.toFixed(1)}m², Wände ${wallArea.toFixed(1)}m², Umfang-Faktor: ${combinedQuantityFactor}, Zeit-Faktor: ${serviceFactor}`);
+  console.log(`📊 Objekt "${object.name}" (${object.type}): Decke ${ceilingArea.toFixed(1)}m², Wände ${wallArea.toFixed(1)}m², Umfang-Faktor: ${quantityFactor}, Zeit-Faktor: ${serviceFactor}`);
 
   return result;
 }

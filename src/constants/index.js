@@ -14,7 +14,8 @@ export const OBJECT_TYPES = [
 ];
 
 export const ROOM_SHAPES = [
-  { id: 'standard', name: 'Standard (rechteckig)', factor: 1.0 },
+  { id: 'standard', name: 'Standard Quadrat', factor: 1.0 },
+  { id: 'schlauch', name: 'Schlauch Rechteck', factor: 1.2 },
   { id: 'l_shape', name: 'L-förmig', factor: 1.4 }
 ];
 

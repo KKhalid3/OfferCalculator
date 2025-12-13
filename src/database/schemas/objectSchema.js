@@ -22,6 +22,9 @@ export const objectSchema = {
     hasKassette: { type: 'boolean' }, // Kassettentür ja/nein (Faktor 1.5)
     // Zuordnung zu Raum
     assignedToRoomId: { type: 'string' }, // ID des zugeordneten Raums (optional)
+    // Raumform-Felder
+    roomShape: { type: 'string' }, // 'standard', 'schlauch', 'l_shape'
+    roomShapeFactor: { type: 'number' }, // Faktor für Umfang (1.0, 1.2, 1.4)
     createdAt: { type: 'number' },
     updatedAt: { type: 'number' }
   },
