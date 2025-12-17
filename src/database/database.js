@@ -1,6 +1,7 @@
 import { createRxDatabase, addRxPlugin } from 'rxdb';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 import { RxDBUpdatePlugin } from 'rxdb/plugins/update';
+import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
 
 // Schemas importieren
 import { serviceSchema } from './schemas/serviceSchema';
@@ -15,6 +16,7 @@ let dbInstance = null;
 
 // RxDB Plugins registrieren
 addRxPlugin(RxDBUpdatePlugin);
+addRxPlugin(RxDBMigrationSchemaPlugin);
 
 export async function initDatabase() {
   if (dbInstance) {
