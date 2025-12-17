@@ -11,6 +11,136 @@ import { defaultCompanySettings } from '../database/schemas/companySettingsSchem
 import { WINDOW_SIZES } from '../constants';
 
 /**
+ * Wendet die Mindestzeit-Regel nach der Tagesplanung an
+ * 
+ * Regel: "Mindestzeit wird nur angewendet, wenn am selben Tag keine weitere Leistung ausgeführt wird
+ * bzw. die Leistungen an einem Tag zusammengefasst die Mindestzeit nicht überschreiten"
+ * 
+ * @param {Array} workflowDays - Die geplanten Tage mit Tasks
+ * @param {Array} allCalculations - Alle Berechnungen
+ * @param {Object} companySettings - Unternehmenseinstellungen
+ * @returns {Map} Map von calculationId -> { shouldApplyMinTime: boolean, minTime: number }
+ */
+async function applyMinimumTimeAfterPlanning(workflowDays, allCalculations, companySettings) {
+  const minTimeDecisions = new Map(); // calculationId -> { shouldApplyMinTime: boolean, minTime: number, reason: string }
+
+  // Erstelle eine Map von calculationId -> calculation für schnellen Zugriff
+  const calculationsById = new Map();
+  for (const calc of allCalculations) {
+    calculationsById.set(calc.id, calc);
+  }
+
+  // Erstelle eine Map von calculationId -> service für schnellen Zugriff
+  const servicesByCalculationId = new Map();
+  for (const calc of allCalculations) {
+    const service = await databaseService.getServiceById(calc.serviceId);
+    if (service) {
+      servicesByCalculationId.set(calc.id, service);
+    }
+  }
+
+  // Für jeden Tag prüfen
+  for (const day of workflowDays) {
+    if (!day.tasks || day.tasks.length === 0) continue;
+
+    // Sammle alle Calculation-IDs für diesen Tag
+    const calculationIdsOnDay = day.tasks.map(t => t.taskId).filter(id => id);
+
+    if (calculationIdsOnDay.length === 0) continue;
+
+    // Prüfe für jede Calculation auf diesem Tag
+    for (const calcId of calculationIdsOnDay) {
+      const calculation = calculationsById.get(calcId);
+      const service = servicesByCalculationId.get(calcId);
+
+      if (!calculation || !service || !service.minTime || service.minTime <= 0) {
+        continue; // Keine Mindestzeit für diesen Service
+      }
+
+      // Berechne die ursprünglich berechnete Basiszeit (ohne Faktoren, ohne Mindestzeit)
+      // Diese wird aus dem Service und der Quantity neu berechnet
+      const quantity = calculation.quantity || 1;
+      let calculatedBaseTime = 0;
+
+      if (service.standardValuePerUnit && service.standardValuePerUnit > 0) {
+        calculatedBaseTime = service.standardValuePerUnit * quantity;
+      } else if (service.standardTime && service.standardQuantity && service.standardQuantity > 0) {
+        calculatedBaseTime = (service.standardTime / service.standardQuantity) * quantity;
+      }
+
+      // Wenn berechnete Zeit bereits >= Mindestzeit, keine Anwendung nötig
+      if (calculatedBaseTime >= service.minTime) {
+        minTimeDecisions.set(calcId, {
+          shouldApplyMinTime: false,
+          minTime: service.minTime,
+          reason: `Berechnete Zeit (${calculatedBaseTime.toFixed(2)} min) >= Mindestzeit (${service.minTime} min)`
+        });
+        continue;
+      }
+
+      // Prüfe ob nur dieser Service am Tag ist (oder nur Unterleistungen)
+      const otherCalculationsOnDay = calculationIdsOnDay.filter(id => id !== calcId);
+
+      // Prüfe ob andere Services Hauptleistungen sind (nicht nur Unterleistungen)
+      let hasOtherMainServices = false;
+      for (const otherCalcId of otherCalculationsOnDay) {
+        const otherCalc = calculationsById.get(otherCalcId);
+        const otherService = servicesByCalculationId.get(otherCalcId);
+
+        if (otherCalc && otherService) {
+          // Prüfe ob es eine Unterleistung ist (durch Prüfung ob es zu einem Hauptservice gehört)
+          // Für jetzt nehmen wir an, dass Unterleistungen durch isSubService markiert sind
+          // Da wir das hier nicht direkt haben, prüfen wir ob es andere Services mit unterschiedlichen serviceIds sind
+          if (otherService.id !== service.id) {
+            hasOtherMainServices = true;
+            break;
+          }
+        }
+      }
+
+      // Regel 1: Wenn nur dieser Service am Tag (oder nur Unterleistungen) → Mindestzeit anwenden
+      if (!hasOtherMainServices) {
+        minTimeDecisions.set(calcId, {
+          shouldApplyMinTime: true,
+          minTime: service.minTime,
+          reason: `Nur dieser Service am Tag (oder nur Unterleistungen)`
+        });
+        console.log(`⏱️ Mindestzeit angewendet für "${service.title}": ${calculatedBaseTime.toFixed(2)} min → ${service.minTime} min (nur dieser Service am Tag)`);
+        continue;
+      }
+
+      // Regel 2: Wenn mehrere Services am Tag → Gesamtzeit des Tages prüfen
+      // Berechne Gesamtzeit aller Services an diesem Tag
+      let totalDayTime = 0;
+      for (const dayCalcId of calculationIdsOnDay) {
+        const dayCalc = calculationsById.get(dayCalcId);
+        if (dayCalc) {
+          totalDayTime += dayCalc.finalTime; // finalTime ist die bereits berechnete Zeit
+        }
+      }
+
+      // Wenn Gesamtzeit < Mindestzeit → Mindestzeit anwenden
+      if (totalDayTime < service.minTime) {
+        minTimeDecisions.set(calcId, {
+          shouldApplyMinTime: true,
+          minTime: service.minTime,
+          reason: `Gesamtzeit des Tages (${totalDayTime.toFixed(2)} min) < Mindestzeit (${service.minTime} min)`
+        });
+        console.log(`⏱️ Mindestzeit angewendet für "${service.title}": Gesamtzeit des Tages (${totalDayTime.toFixed(2)} min) < Mindestzeit (${service.minTime} min)`);
+      } else {
+        minTimeDecisions.set(calcId, {
+          shouldApplyMinTime: false,
+          minTime: service.minTime,
+          reason: `Gesamtzeit des Tages (${totalDayTime.toFixed(2)} min) >= Mindestzeit (${service.minTime} min)`
+        });
+      }
+    }
+  }
+
+  return minTimeDecisions;
+}
+
+/**
  * Berechnet die Preise basierend auf Zeit, Stundenlohn und Material
  */
 function calculatePrice(finalTimeMinutes, quantity, service, companySettings) {
@@ -330,17 +460,24 @@ export async function performCalculation() {
         }
 
         // Sonderangaben-Faktoren
+        // WICHTIG: Sonderfaktoren werden NUR auf Hauptleistungen angewendet, NICHT auf Unterleistungen
         let specialNoteFactor = 1;
-        for (const noteId of (object.specialNotes || [])) {
-          const isRelevant = await isSpecialNoteRelevantForService(noteId, serviceId);
-          if (isRelevant) {
-            const specialService = await databaseService.getSpecialServiceById(noteId);
-            if (specialService && !specialService.requiredService && specialService.factor && specialService.factor !== 1) {
-              specialNoteFactor *= specialService.factor;
+        if (!isSubService) {
+          // Nur für Hauptleistungen: Sonderfaktoren anwenden
+          for (const noteId of (object.specialNotes || [])) {
+            const isRelevant = await isSpecialNoteRelevantForService(noteId, serviceId);
+            if (isRelevant) {
+              const specialService = await databaseService.getSpecialServiceById(noteId);
+              if (specialService && !specialService.requiredService && specialService.factor && specialService.factor !== 1) {
+                specialNoteFactor *= specialService.factor;
+              }
             }
           }
+          baseTime = baseTime * specialNoteFactor;
+        } else {
+          // Für Unterleistungen: Keine Sonderfaktoren anwenden
+          console.log(`🔒 "${service.title}": Unterleistung - Sonderfaktoren werden nicht angewendet`);
         }
-        baseTime = baseTime * specialNoteFactor;
 
         // ========================================
         // OBJEKTSPEZIFISCHE FAKTOREN
@@ -382,8 +519,34 @@ export async function performCalculation() {
         // EFFIZIENZ aus Cache (kumuliert berechnet!)
         // ========================================
         const efficiencyResult = efficiencyCache.get(service.id) || { efficiency: 1, details: {} };
-        const efficiency = efficiencyResult.efficiency;
+        let efficiency = efficiencyResult.efficiency;
         const efficiencyDetails = efficiencyResult.details;
+
+        // WICHTIG: Effizienz begrenzen, damit Zeit pro Einheit nie unter maxProductivityPerDay-Grenze fällt
+        // Die Effizienz darf nicht so hoch sein, dass die Zeit pro Einheit unter das durch
+        // maxProductivityPerDay definierte Minimum fällt
+        if (service.maxProductivityPerDay && service.maxProductivityPerDay > 0 && quantity > 0) {
+          const MINUTES_PER_DAY = 8 * 60; // 480 Minuten
+          const timePerUnitAtMax = MINUTES_PER_DAY / service.maxProductivityPerDay;
+
+          // Berechne aktuelle Zeit pro Einheit ohne Effizienz (mit serviceFactor)
+          const timePerUnitWithoutEfficiency = (baseTime * quantities.serviceFactor) / quantity;
+
+          // Maximale erlaubte Effizienz: timePerUnit darf nicht unter timePerUnitAtMax fallen
+          // finalTime / quantity >= timePerUnitAtMax
+          // (baseTime / efficiency * serviceFactor) / quantity >= timePerUnitAtMax
+          // baseTime * serviceFactor / (efficiency * quantity) >= timePerUnitAtMax
+          // efficiency <= (baseTime * serviceFactor) / (quantity * timePerUnitAtMax)
+          const maxAllowedEfficiency = timePerUnitWithoutEfficiency / timePerUnitAtMax;
+
+          if (efficiency > maxAllowedEfficiency) {
+            console.log(`⚠️ Effizienz begrenzt für "${service.title}": ${efficiency.toFixed(2)} → ${maxAllowedEfficiency.toFixed(2)} (minTimePerUnit: ${timePerUnitAtMax.toFixed(2)} Min/${service.unit}, maxProductivityPerDay: ${service.maxProductivityPerDay} ${service.unit}/Tag)`);
+            efficiency = maxAllowedEfficiency;
+            efficiencyDetails.cappedAtMaxProductivity = true;
+            efficiencyDetails.maxAllowedEfficiency = maxAllowedEfficiency;
+            efficiencyDetails.timePerUnitAtMax = timePerUnitAtMax;
+          }
+        }
 
         const finalTime = (baseTime / efficiency) * quantities.serviceFactor;
 
@@ -512,10 +675,142 @@ export async function performCalculation() {
   }
 
   // Workflow planen
+  let workflow = null;
   if (allCalculations.length > 0) {
-    const workflow = await planWorkflow(allCalculations, customerApproval);
+    workflow = await planWorkflow(allCalculations, customerApproval);
     results.totalDays = workflow.totalDays;
     results.optimalEmployees = workflow.optimalEmployees;
+
+    // ========================================
+    // PHASE 4: Mindestzeit nach Tagesplanung anwenden
+    // ========================================
+    console.log('⏱️ PHASE 4: Wende Mindestzeit-Regel nach Tagesplanung an...');
+    const minTimeDecisions = await applyMinimumTimeAfterPlanning(
+      workflow.days || [],
+      allCalculations,
+      companySettings
+    );
+
+    // Aktualisiere Berechnungen mit Mindestzeit
+    let totalTimeAdjustment = 0;
+    let totalCostAdjustment = 0;
+
+    for (const [calcId, decision] of minTimeDecisions) {
+      if (decision.shouldApplyMinTime) {
+        const calculation = allCalculations.find(c => c.id === calcId);
+        if (!calculation) continue;
+
+        const service = await databaseService.getServiceById(calculation.serviceId);
+        if (!service) continue;
+
+        // Berechne die ursprünglich berechnete Basiszeit neu
+        const quantity = calculation.quantity || 1;
+        let calculatedBaseTime = 0;
+
+        if (service.standardValuePerUnit && service.standardValuePerUnit > 0) {
+          calculatedBaseTime = service.standardValuePerUnit * quantity;
+        } else if (service.standardTime && service.standardQuantity && service.standardQuantity > 0) {
+          calculatedBaseTime = (service.standardTime / service.standardQuantity) * quantity;
+        }
+
+        // Die Mindestzeit wird auf die ursprünglich berechnete Basiszeit angewendet
+        // Dann müssen wir baseTime und finalTime neu berechnen
+        const originalBaseTime = calculatedBaseTime;
+
+        if (originalBaseTime <= 0) {
+          console.warn(`⚠️ "${service.title}": originalBaseTime ist 0, überspringe Mindestzeit-Anwendung`);
+          continue;
+        }
+
+        const adjustedBaseTime = Math.max(originalBaseTime, decision.minTime);
+
+        // Berechne die Differenz in baseTime
+        const baseTimeDifference = adjustedBaseTime - originalBaseTime;
+
+        if (baseTimeDifference > 0) {
+          // Aktualisiere baseTime (mit allen Faktoren, die bereits angewendet wurden)
+          // Die Faktoren wurden bereits auf originalBaseTime angewendet, also müssen wir sie auch auf adjustedBaseTime anwenden
+          const factorMultiplier = calculation.baseTime / originalBaseTime; // Verhältnis der Faktoren
+          const newBaseTime = adjustedBaseTime * factorMultiplier;
+
+          // Neuberechnung von finalTime mit der neuen baseTime
+          const efficiency = calculation.efficiency || 1;
+          const serviceFactor = calculation.factors?.serviceFactor || 1;
+          const newFinalTime = (newBaseTime / efficiency) * serviceFactor;
+
+          // Berechne die Differenz in finalTime
+          const currentFinalTime = calculation.finalTime;
+          const timeDifference = newFinalTime - currentFinalTime;
+
+          // Neuberechnung der Preise
+          const newPricing = calculatePrice(newFinalTime, quantity, service, companySettings);
+
+          // Berechne Kosten-Differenz
+          const costDifference = newPricing.totalCost - calculation.totalCost;
+
+          // Aktualisiere Calculation in DB
+          await databaseService.updateCalculation(calcId, {
+            baseTime: newBaseTime,
+            finalTime: newFinalTime,
+            laborCost: newPricing.laborCost,
+            materialCost: newPricing.materialCost,
+            totalCost: newPricing.totalCost
+          });
+
+          // Aktualisiere auch in allCalculations Array
+          calculation.baseTime = newBaseTime;
+          calculation.finalTime = newFinalTime;
+          calculation.laborCost = newPricing.laborCost;
+          calculation.materialCost = newPricing.materialCost;
+          calculation.totalCost = newPricing.totalCost;
+
+          // Aktualisiere Ergebnisse
+          totalTimeAdjustment += timeDifference;
+          totalCostAdjustment += costDifference;
+
+          // Finde und aktualisiere das entsprechende Service-Ergebnis in results
+          for (const objResult of results.objects) {
+            const serviceResult = objResult.services.find(s => s.serviceId === service.id);
+            if (serviceResult) {
+              // Finde die Calculation für dieses Objekt
+              const objCalculation = allCalculations.find(
+                c => c.objectId === objResult.id && c.serviceId === service.id
+              );
+
+              if (objCalculation && objCalculation.id === calcId) {
+                // Aktualisiere Service-Ergebnis
+                serviceResult.baseTime = newBaseTime;
+                serviceResult.finalTime = newFinalTime;
+                serviceResult.hours = newPricing.hours;
+                serviceResult.laborCost = newPricing.laborCost;
+                serviceResult.materialCost = newPricing.materialCost;
+                serviceResult.totalCost = newPricing.totalCost;
+                serviceResult.minTimeApplied = true;
+
+                // Aktualisiere Objekt-Gesamtsummen
+                objResult.totalTime = objResult.totalTime - currentFinalTime + newFinalTime;
+                objResult.totalLaborCost = objResult.totalLaborCost - calculation.laborCost + newPricing.laborCost;
+                objResult.totalMaterialCost = objResult.totalMaterialCost - calculation.materialCost + newPricing.materialCost;
+                objResult.totalCost = objResult.totalCost - calculation.totalCost + newPricing.totalCost;
+
+                // Aktualisiere Gesamtergebnisse
+                results.totalTime = results.totalTime - currentFinalTime + newFinalTime;
+                results.totalLaborCost = results.totalLaborCost - calculation.laborCost + newPricing.laborCost;
+                results.totalMaterialCost = results.totalMaterialCost - calculation.materialCost + newPricing.materialCost;
+                results.totalCost = results.totalCost - calculation.totalCost + newPricing.totalCost;
+
+                console.log(`💰 "${service.title}": Zeit ${currentFinalTime.toFixed(2)} → ${newFinalTime.toFixed(2)} min (+${timeDifference.toFixed(2)} min), Kosten +${costDifference.toFixed(2)} €`);
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (totalTimeAdjustment > 0 || totalCostAdjustment > 0) {
+      console.log(`📊 Mindestzeit-Anpassung: +${totalTimeAdjustment.toFixed(2)} min, +${totalCostAdjustment.toFixed(2)} €`);
+    }
   }
 
   // Runden

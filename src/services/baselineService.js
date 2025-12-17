@@ -15,9 +15,9 @@ export async function getBaselineTime(serviceId, quantity) {
     console.warn(`Service ${serviceId} nicht gefunden`);
     return 0;
   }
-  
+
   let baseTime = 0;
-  
+
   // PRIORITÄT 1: standardValuePerUnit aus Onboarding verwenden
   if (service.standardValuePerUnit && service.standardValuePerUnit > 0) {
     baseTime = service.standardValuePerUnit * quantity;
@@ -37,13 +37,11 @@ export async function getBaselineTime(serviceId, quantity) {
     console.warn(`⚠️ ${service.title}: Keine Zeitwerte konfiguriert (standardValuePerUnit oder standardTime/standardQuantity)`);
     return 0;
   }
-  
-  // MINDESTZEIT anwenden (aus Onboarding)
-  if (service.minTime && service.minTime > 0 && baseTime < service.minTime) {
-    console.log(`⏱️ ${service.title}: Mindestzeit angewendet: ${baseTime.toFixed(2)} min → ${service.minTime} min`);
-    baseTime = service.minTime;
-  }
-  
+
+  // MINDESTZEIT wird NACH der Tagesplanung angewendet (siehe calculationService.js)
+  // Die Mindestzeit wird nur angewendet, wenn am selben Tag keine weitere Leistung ausgeführt wird
+  // bzw. die Leistungen an einem Tag zusammengefasst die Mindestzeit nicht überschreiten
+
   return baseTime;
 }
 
@@ -53,7 +51,7 @@ export async function getBaselineTime(serviceId, quantity) {
 export async function getWaitTime(serviceId) {
   const service = await databaseService.getServiceById(serviceId);
   if (!service) return 0;
-  
+
   return service.waitTime || 0;
 }
 

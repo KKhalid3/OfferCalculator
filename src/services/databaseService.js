@@ -423,6 +423,36 @@ export const databaseService = {
     return docs.map(doc => doc.toJSON());
   },
 
+  async getCalculationById(id) {
+    const db = getDatabase();
+    const doc = await db.collections.calculations.findOne(id).exec();
+    return doc ? doc.toJSON() : null;
+  },
+
+  async updateCalculation(id, updates) {
+    try {
+      const db = getDatabase();
+      const doc = await db.collections.calculations.findOne(id).exec();
+      if (!doc) {
+        console.error(`updateCalculation: Calculation with id ${id} not found`);
+        return null;
+      }
+
+      await doc.update({
+        $set: {
+          ...updates,
+          updatedAt: Date.now()
+        }
+      });
+
+      const updated = await db.collections.calculations.findOne(id).exec();
+      return updated ? updated.toJSON() : null;
+    } catch (error) {
+      console.error('updateCalculation Fehler:', error);
+      throw error;
+    }
+  },
+
   async deleteCalculationsByObject(objectId) {
     try {
       const db = getDatabase();

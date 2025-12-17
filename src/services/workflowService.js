@@ -76,25 +76,17 @@ export async function sortServicesByWorkflow(calculations) {
 
 /**
  * NEU: Prüft Cross-Object Abhängigkeiten
- * Schleifen auf Türen/Fenstern MUSS vor Anstrich auf Wänden/Decken im selben Raum erfolgen
+ * 1. Schleifen auf Türen/Fenstern MUSS vor Anstrich auf Wänden/Decken im selben Raum erfolgen
+ * 2. Schleifen auf Türen/Fenstern MUSS NACH Spachteln von Decken/Wänden im selben Raum erfolgen
  * @param {Object} task - Der zu prüfende Task
  * @param {Object} tasksByObject - Alle Tasks gruppiert nach Objekten
  * @param {Array} objects - Alle Objekt-Definitionen
  * @returns {boolean} - true wenn Task ausgeführt werden darf
  */
 function checkCrossObjectDependencies(task, tasksByObject, objects) {
-  // Nur relevant für 'beschichtung' Phase Tasks (Anstrich auf Wänden)
-  if (task.workflowPhase !== 'beschichtung') return true;
-
-  // Nur relevant wenn der Arbeitsbereich 'anstrich', 'wand' oder 'decke' ist
-  if (!['anstrich', 'wand', 'decke', 'allgemein'].includes(task.workArea)) return true;
-
   // Finde das Objekt für diesen Task
   const taskObject = objects?.find(obj => obj.id === task.objectId);
   if (!taskObject) return true;
-
-  // Nur relevant für Raum-Objekte
-  if (taskObject.objectCategory !== 'raum') return true;
 
   const roomId = task.objectId;
 
@@ -104,15 +96,55 @@ function checkCrossObjectDependencies(task, tasksByObject, objects) {
     obj.assignedToRoomId === roomId
   ) || [];
 
-  // Prüfe ob alle Schleifen-Tasks auf diesen Türen/Fenstern abgeschlossen sind
-  for (const relObj of relatedDoorWindowObjects) {
-    const relTasks = tasksByObject[relObj.id] || [];
+  // REGEL 1: Schleifen auf Türen/Fenstern MUSS vor Anstrich auf Wänden/Decken im selben Raum erfolgen
+  // Nur relevant für 'beschichtung' Phase Tasks (Anstrich auf Wänden)
+  if (task.workflowPhase === 'beschichtung') {
+    // Nur relevant wenn der Arbeitsbereich 'anstrich', 'wand' oder 'decke' ist
+    if (['anstrich', 'wand', 'decke', 'allgemein'].includes(task.workArea)) {
+      // Nur relevant für Raum-Objekte
+      if (taskObject.objectCategory === 'raum') {
+        // Prüfe ob alle Schleifen-Tasks auf diesen Türen/Fenstern abgeschlossen sind
+        for (const relObj of relatedDoorWindowObjects) {
+          const relTasks = tasksByObject[relObj.id] || [];
 
-    for (const relTask of relTasks) {
-      // Prüfe nur Tasks in Phase 'untergrund' (Schleifen)
-      if (relTask.workflowPhase === 'untergrund' && relTask.remainingTime > 0) {
-        console.log(`⏳ Cross-Object Abhängigkeit: "${task.serviceName}" wartet auf "${relTask.serviceName}" (${relObj.name})`);
-        return false; // Schleifen noch nicht fertig → Anstrich muss warten
+          for (const relTask of relTasks) {
+            // Prüfe nur Tasks in Phase 'untergrund' (Schleifen)
+            if (relTask.workflowPhase === 'untergrund' && relTask.remainingTime > 0) {
+              console.log(`⏳ Cross-Object Abhängigkeit: "${task.serviceName}" wartet auf "${relTask.serviceName}" (${relObj.name})`);
+              return false; // Schleifen noch nicht fertig → Anstrich muss warten
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // REGEL 2: Schleifen auf Türen/Fenstern MUSS NACH Spachteln von Decken/Wänden im selben Raum erfolgen
+  // Nur relevant für 'untergrund' Phase Tasks (Schleifen)
+  if (task.workflowPhase === 'untergrund') {
+    // Prüfe ob es sich um Schleifen handelt (Türen/Fenster)
+    if (taskObject.objectCategory === 'tuer' || taskObject.objectCategory === 'fenster') {
+      // Prüfe ob der Task Schleifen ist (durch workArea oder Service-Name)
+      const isSanding = task.workArea === 'lackierung' ||
+        (task.serviceName && task.serviceName.toLowerCase().includes('schleif'));
+
+      if (isSanding) {
+        // Prüfe ob Spachteln auf Decken/Wänden im zugeordneten Raum abgeschlossen ist
+        if (taskObject.assignedToRoomId) {
+          const roomTasks = tasksByObject[taskObject.assignedToRoomId] || [];
+
+          for (const roomTask of roomTasks) {
+            // Prüfe ob es Spachteln auf Decken/Wänden ist
+            const isSpackling = roomTask.workArea === 'spachtel' ||
+              (roomTask.serviceName && roomTask.serviceName.toLowerCase().includes('spachtel'));
+            const isWallOrCeiling = roomTask.workArea === 'wand' || roomTask.workArea === 'decke';
+
+            if (isSpackling && isWallOrCeiling && roomTask.remainingTime > 0) {
+              console.log(`⏳ Abhängigkeit: "${task.serviceName}" (${taskObject.name}) wartet auf "${roomTask.serviceName}" (Spachteln Decken/Wände)`);
+              return false; // Spachteln noch nicht fertig → Schleifen muss warten
+            }
+          }
+        }
       }
     }
   }
@@ -191,6 +223,23 @@ function canWorkDuringDrying(dryingArea, otherArea, sameRoom, otherTaskCreatesDu
     }
   }
 
+  // WICHTIG: Spachtelung trocknet - Im gleichen Raum KEINE weiteren Arbeiten möglich
+  // Wenn Decken und Wände gespachtelt wurden, können während der Trocknungszeit
+  // im gleichen Raum keine weiteren Arbeiten (Grundierung, Tapezieren, Streichen) durchgeführt werden
+  if (dryingArea === 'spachtel' && sameRoom) {
+    // Alle nachfolgenden Arbeiten sind während Spachtel-Trocknung im gleichen Raum NICHT möglich
+    if (['grundierung', 'tapete', 'anstrich', 'wand', 'decke'].includes(otherArea)) {
+      return {
+        canWork: false,
+        reason: 'Spachtelung trocknet – Grundierung, Tapezieren und Streichen im gleichen Raum nicht möglich'
+      };
+    }
+    // Nur unabhängige Bereiche (Fenster, Türen, Boden) sind möglich
+    if (['fenster', 'tuer', 'boden'].includes(otherArea)) {
+      return { canWork: true, reason: 'Spachtelung trocknet – Fenster/Türen/Boden sind unabhängig' };
+    }
+  }
+
   // Gleicher Bereich = warten
   if (dryingArea === otherArea) {
     return { canWork: false, reason: 'Gleicher Arbeitsbereich – muss erst trocknen' };
@@ -221,7 +270,186 @@ export async function checkWaitTimesAndParallelWork(calculations) {
 }
 
 /**
- * Schritt 13: Optimale Mitarbeiteranzahl berechnen (ERWEITERT)
+ * ============================================================================
+ * SCHRITT 1: KONFIGURIERBARE GEWICHTUNGEN FÜR OPTIMIERUNG
+ * ============================================================================
+ * 
+ * Diese Gewichtungen bestimmen, wie wichtig verschiedene Faktoren bei der
+ * Mitarbeiter-Optimierung sind. Sie können in companySettings überschrieben werden.
+ * 
+ * PRIORITÄTEN:
+ * 1. Minimierung der Kalendertage (Hauptziel: weniger Zeit beim Kunden)
+ * 2. Maximierung der Mitarbeiter-Auslastung (Nebenziel: jeder MA gut ausgelastet)
+ * 3. Minimierung des Effizienz-Verlusts (Trade-off: Koordinations-Overhead)
+ * 4. Minimierung des Restes am letzten Tag (kleinerer Faktor)
+ */
+const DEFAULT_OPTIMIZATION_WEIGHTS = {
+  daysWeight: 100,        // Gewichtung für gesparte Tage (höchste Priorität)
+  utilizationWeight: 20,   // Gewichtung für Auslastung (max 20 Punkte bei 100%)
+  efficiencyWeight: 2,    // Gewichtung für Effizienz (max 20 Punkte bei 0% Verlust)
+  restDayWeight: 0.5,     // Gewichtung für Rest am letzten Tag (kleinerer Faktor)
+  efficiencyPenalty: 5    // Strafpunkte pro % über maxEfficiencyLoss
+};
+
+/**
+ * ============================================================================
+ * SCHRITT 2: HILFSFUNKTION - Sammelt alle gültigen Mitarbeiter-Konfigurationen
+ * ============================================================================
+ * 
+ * Diese Funktion sammelt alle möglichen Mitarbeiteranzahlen und berechnet
+ * für jede die relevanten Metriken (Tage, Auslastung, Effizienz-Verlust).
+ * 
+ * NEU: Prüft auch die Zeitersparnis-Regel (proportional):
+ * Für n Mitarbeiter müssen (n-1) × weeksSavedPerAdditionalEmployee Wochen gespart werden.
+ * 
+ * @param {number} totalHours - Gesamtarbeitszeit
+ * @param {number} dailyHours - Stunden pro Arbeitstag
+ * @param {number} minHoursPerEmployee - Mindeststunden pro Mitarbeiter
+ * @param {number} maxEmployees - Maximale Anzahl Mitarbeiter
+ * @param {number} efficiencyLossPerEmployee - Effizienz-Verlust pro zusätzlichem MA (%)
+ * @param {number} baselineDays - Tage für 1 Mitarbeiter (Referenz für Zeitersparnis)
+ * @param {number} weeksSavedPerAdditionalEmployee - Wochen pro zusätzlichem MA (Standard: 1)
+ * @returns {Array} Array von Konfigurationsobjekten
+ */
+function collectValidEmployeeConfigurations(
+  totalHours,
+  dailyHours,
+  minHoursPerEmployee,
+  maxEmployees,
+  efficiencyLossPerEmployee = 5,
+  baselineDays = null,
+  weeksSavedPerAdditionalEmployee = 1
+) {
+  const configurations = [];
+
+  // Berechne baselineDays falls nicht übergeben
+  const baselineDaysCalc = baselineDays || (totalHours / dailyHours);
+  const daysPerWeek = 5; // Arbeitstage pro Woche (Mo-Fr)
+  const requiredDaysPerWeek = weeksSavedPerAdditionalEmployee * daysPerWeek;
+
+  for (let emp = 1; emp <= maxEmployees; emp++) {
+    const hoursPerEmp = totalHours / emp;
+    const daysNeeded = hoursPerEmp / dailyHours;
+    const restOfLastDay = (daysNeeded * dailyHours) - hoursPerEmp;
+    const totalEfficiencyLoss = (emp - 1) * efficiencyLossPerEmployee;
+
+    // Berechne Auslastung: wie viel % der verfügbaren Zeit wird genutzt
+    const totalAvailableHours = daysNeeded * dailyHours;
+    const utilizationRate = hoursPerEmp / totalAvailableHours;
+
+    // HARTE GRENZE: Mindeststunden pro Mitarbeiter
+    // Wenn diese Grenze unterschritten wird, sind weitere Konfigurationen auch ungültig
+    if (hoursPerEmp < minHoursPerEmployee) {
+      break; // Weitere Mitarbeiter haben noch weniger Stunden
+    }
+
+    // NEU: Schrittweise Mitarbeiter-Regel
+    // Regel: Für n Mitarbeiter (n > 1) müssen die benötigten Tage >= (n-1) Wochen UND <= (n-1) Wochen sein
+    // - 2 MA: daysNeeded >= 1 Woche (5 Tage) UND daysNeeded <= 1 Woche (5 Tage)
+    // - 3 MA: daysNeeded >= 2 Wochen (10 Tage) UND daysNeeded <= 2 Wochen (10 Tage)
+    // - 4 MA: daysNeeded >= 3 Wochen (15 Tage) UND daysNeeded <= 3 Wochen (15 Tage)
+    // - 6 MA: daysNeeded >= 5 Wochen (25 Tage) UND daysNeeded <= 5 Wochen (25 Tage)
+    // Toleranz: ±1 Tag für Rundungsfehler
+    const RULE_ALLOWED_DAYS = {
+      1: 5,
+      2: 5,
+      3: 10,
+      4: 15
+    };
+
+    if (emp > 4) break; // ✅ Regel endet bei 4 MA
+
+    const allowedDays = RULE_ALLOWED_DAYS[emp];
+
+    if (daysNeeded > allowedDays) {
+      console.log(`⏭️ ${emp} MA: ${daysNeeded.toFixed(2)} Tage > erlaubt (${allowedDays} Tage)`);
+      continue;
+    }
+
+    configurations.push({
+      employees: emp,
+      hoursPerEmp,
+      daysNeeded,
+      restOfLastDay,
+      totalEfficiencyLoss,
+      utilizationRate,
+      totalAvailableHours,
+      daysSaved: baselineDaysCalc - daysNeeded // NEU: Gesparte Tage im Vergleich zu 1 MA
+    });
+  }
+
+  return configurations;
+}
+
+/**
+ * ============================================================================
+ * SCHRITT 3: HILFSFUNKTION - Berechnet Optimierungs-Score für eine Konfiguration
+ * ============================================================================
+ * 
+ * Diese Funktion bewertet eine Mitarbeiter-Konfiguration basierend auf mehreren
+ * Kriterien. Höhere Scores sind besser.
+ * 
+ * SCORE-KOMPONENTEN:
+ * 1. Tage-Score: Jeder gesparte Tag gibt viele Punkte (Hauptziel)
+ * 2. Auslastungs-Score: Höhere Auslastung = mehr Punkte (Nebenziel)
+ * 3. Effizienz-Score: Niedrigerer Effizienz-Verlust = mehr Punkte (Trade-off)
+ * 4. Rest-Tag-Score: Weniger Rest am letzten Tag = mehr Punkte (kleinerer Faktor)
+ * 
+ * @param {Object} config - Konfigurationsobjekt (von collectValidEmployeeConfigurations)
+ * @param {number} baselineDays - Referenz-Tage (für 1 Mitarbeiter)
+ * @param {number} maxEfficiencyLoss - Maximal erlaubter Effizienz-Verlust (%)
+ * @param {Object} weights - Gewichtungen für Score-Berechnung
+ * @returns {Object} Score-Objekt mit Gesamt-Score und Details
+ */
+function calculateConfigurationScore(
+  config,
+  baselineDays,
+  maxEfficiencyLoss,
+  weights = DEFAULT_OPTIMIZATION_WEIGHTS
+) {
+  // PRIORITÄT 1: Minimierung der Tage (höchste Gewichtung)
+  // Jeder gesparte Tag ist sehr wertvoll für den Kunden
+  const daysSaved = baselineDays - config.daysNeeded;
+  const daysScore = daysSaved * weights.daysWeight;
+
+  // PRIORITÄT 2: Gute Auslastung pro Mitarbeiter
+  // Ideal: nah an dailyHours (z.B. 7-8h pro Tag)
+  // Bonus wenn Auslastung hoch ist (über 80%)
+  const utilizationScore = config.utilizationRate * weights.utilizationWeight;
+
+  // PRIORITÄT 3: Effizienz-Verlust (aber nicht zu restriktiv)
+  // Akzeptiere bis maxEfficiencyLoss, darüber Abzug
+  let efficiencyScore = 0;
+  if (config.totalEfficiencyLoss <= maxEfficiencyLoss) {
+    // Innerhalb des Limits: Bonus für niedrigeren Verlust
+    efficiencyScore = (maxEfficiencyLoss - config.totalEfficiencyLoss) * weights.efficiencyWeight;
+  } else {
+    // Über dem Limit: Strafpunkte, aber nicht komplett ausschließen wenn es Tage spart
+    efficiencyScore = -(config.totalEfficiencyLoss - maxEfficiencyLoss) * weights.efficiencyPenalty;
+  }
+
+  // PRIORITÄT 4: Rest des letzten Tages (kleinerer Faktor)
+  // Weniger Rest ist besser, aber nicht so wichtig wie Tage
+  const restScore = -config.restOfLastDay * weights.restDayWeight;
+
+  const totalScore = daysScore + utilizationScore + efficiencyScore + restScore;
+
+  return {
+    totalScore,
+    daysScore,
+    utilizationScore,
+    efficiencyScore,
+    restScore,
+    daysSaved
+  };
+}
+
+/**
+ * Schritt 13: Optimale Mitarbeiteranzahl berechnen (ERWEITERT mit Optimierung)
+ * 
+ * OPTIMIERUNGSZIELE:
+ * 1. Minimierung der Kalendertage (Hauptziel: weniger Zeit beim Kunden)
+ * 2. Maximierung der Mitarbeiter-Auslastung (Nebenziel: jeder MA gut ausgelastet)
  * 
  * Berücksichtigt:
  * - Onboarding-Einstellungen für Mehrpersonal
@@ -244,7 +472,6 @@ export async function calculateOptimalEmployeesAdvanced(
   customerApproval = false
 ) {
   const dailyHours = companySettings?.dailyHours || HOURS_PER_DAY;
-  const minHoursForMulti = companySettings?.minHoursForMultiEmployee || 16;
   const minHoursPerEmployee = companySettings?.minHoursPerEmployee || 6;
   const maxEfficiencyLoss = companySettings?.maxEfficiencyLossPercent || 10;
   const allowParallelRooms = companySettings?.allowParallelRoomWork ?? true;
@@ -274,28 +501,7 @@ export async function calculateOptimalEmployeesAdvanced(
     return result;
   }
 
-  // === REGEL 2: Unter Mehrpersonal-Schwelle → 1 Mitarbeiter ===
-  if (totalHours < minHoursForMulti) {
-    result.reasoning.push({
-      type: 'info',
-      text: `Gesamtarbeitszeit: ${totalHours.toFixed(1)}h (${(totalHours * 60).toFixed(0)} Minuten)`
-    });
-    result.reasoning.push({
-      type: 'info',
-      text: `Arbeitstag: ${dailyHours} Stunden`
-    });
-    result.reasoning.push({
-      type: 'info',
-      text: `Berechnung: ${totalHours.toFixed(1)}h ÷ ${dailyHours}h = ${(totalHours / dailyHours).toFixed(1)} → 1 Mitarbeiter`
-    });
-    result.reasoning.push({
-      type: 'warning',
-      text: `Hinweis: Mehrpersonal wird erst ab ${minHoursForMulti}h erwogen (aktuell ${totalHours.toFixed(1)}h)`
-    });
-    return result;
-  }
-
-  // === REGEL 3: Berechne theoretische Mitarbeiterzahl ===
+  // === REGEL 2: Berechne theoretische Mitarbeiterzahl ===
   const theoreticalEmployees = Math.ceil(totalHours / dailyHours);
 
   result.reasoning.push({
@@ -312,70 +518,145 @@ export async function calculateOptimalEmployeesAdvanced(
   });
 
   // === REGEL 4: Prüfe ob Mehrpersonal überhaupt möglich ist ===
-  // Für Mehrpersonal brauchen wir entweder:
-  // a) Mehrere Räume/Objekte (mit Kundenfreigabe)
-  // b) Leistungen die parallel ausführbar sind
+  // WICHTIG: Mehrpersonal ist immer möglich, auch ohne Parallelarbeit!
+  // Parallelarbeit (canWorkParallel) beeinflusst nur, ob Mitarbeiter GLEICHZEITIG arbeiten können,
+  // nicht ob mehrere Mitarbeiter NACHEINANDER arbeiten können, um die Gesamtzeit zu reduzieren.
 
   const canWorkParallel = (customerApproval && allowParallelRooms && uniqueObjects > 1);
 
-  // === REGEL 5: Effizienz-Prüfung ===
-  // Beispiel: 32h → 2 MA = 16h/MA (OK), 3 MA = 10.7h/MA (evtl. noch OK), 4 MA = 8h/MA (grenzwertig)
+  // === REGEL 5: OPTIMIERUNG - Minimierung der Tage + Maximierung der Auslastung ===
+  // 
+  // STRATEGIE:
+  // 1. Sammle alle gültigen Konfigurationen (mindestens minHoursPerEmployee pro MA)
+  // 2. Bewerte jede Konfiguration mit einem Score-System
+  // 3. Wähle die Konfiguration mit dem besten Score
+  //
+  // ZIELE:
+  // - PRIORITÄT 1: Minimierung der Kalendertage (Hauptziel: weniger Zeit beim Kunden)
+  // - PRIORITÄT 2: Maximierung der Mitarbeiter-Auslastung (Nebenziel: jeder MA gut ausgelastet)
+  // - PRIORITÄT 3: Minimierung des Effizienz-Verlusts (Trade-off: Koordinations-Overhead)
+  // - PRIORITÄT 4: Minimierung des Restes am letzten Tag (kleinerer Faktor)
 
-  let optimalEmployees = 1;
+  // Lade konfigurierbare Gewichtungen (falls in companySettings definiert)
+  const optimizationWeights = {
+    ...DEFAULT_OPTIMIZATION_WEIGHTS,
+    ...(companySettings?.optimizationWeights || {})
+  };
 
-  // Maximale Mitarbeiter: begrenzt durch Räume wenn Parallelarbeit, sonst durch theoretische Anzahl
-  const maxEmployees = canWorkParallel
+  // Effizienz-Verlust pro zusätzlichem Mitarbeiter (konfigurierbar)
+  const efficiencyLossPerEmployee = companySettings?.efficiencyLossPerEmployee || 5;
+
+  // NEU: Zeitersparnis-Regel (proportional)
+  // Für n Mitarbeiter müssen (n-1) × weeksSavedPerAdditionalEmployee Wochen gespart werden
+  const weeksSavedPerAdditionalEmployee = companySettings?.weeksSavedPerAdditionalEmployee ?? 1;
+
+  // Maximale Mitarbeiter: 
+  // - Wenn Parallelarbeit möglich: begrenzt durch Räume ODER theoretische Anzahl (was kleiner ist)
+  // - Wenn keine Parallelarbeit: theoretische Anzahl (Mitarbeiter arbeiten nacheinander)
+  // WICHTIG: Auch ohne Parallelarbeit können mehrere Mitarbeiter verwendet werden,
+  // sie arbeiten dann nacheinander statt gleichzeitig
+  const RULE_MAX_EMPLOYEES = companySettings?.ruleMaxEmployees ?? 4;
+
+  const maxEmployeesRaw = canWorkParallel
     ? Math.min(theoreticalEmployees, uniqueObjects)
     : theoreticalEmployees;
 
-  for (let emp = 1; emp <= maxEmployees; emp++) {
-    const hoursPerEmp = totalHours / emp;
-    const daysNeeded = Math.ceil(hoursPerEmp / dailyHours);
+  // ✅ harte Kappung nach Regel
+  const maxEmployees = Math.min(maxEmployeesRaw, RULE_MAX_EMPLOYEES);
 
-    // Prüfe ob jeder Mitarbeiter genug Arbeit hat
-    if (hoursPerEmp < minHoursPerEmployee) {
-      // Zu wenig Stunden pro Mitarbeiter → Leerlauf
-      result.reasoning.push({
-        type: 'warning',
-        text: `${emp} Mitarbeiter: ${hoursPerEmp.toFixed(1)}h pro Person < ${minHoursPerEmployee}h Minimum → Leerlauf`
-      });
-      break;
+  // Referenz: Tage für 1 Mitarbeiter (Baseline für Vergleich)
+  const baselineDays = result.recommendedDays;
+
+  // SCHRITT 1: Sammle alle gültigen Konfigurationen
+  const validConfigurations = collectValidEmployeeConfigurations(
+    totalHours,
+    dailyHours,
+    minHoursPerEmployee,
+    maxEmployees,
+    efficiencyLossPerEmployee,
+    baselineDays,
+    weeksSavedPerAdditionalEmployee
+  );
+
+  // Logge ungültige Konfigurationen (zu wenig Stunden pro MA)
+  if (validConfigurations.length < maxEmployees) {
+    const firstInvalid = validConfigurations.length + 1;
+    const hoursPerEmpInvalid = totalHours / firstInvalid;
+    result.reasoning.push({
+      type: 'warning',
+      text: `${firstInvalid}+ Mitarbeiter: ${hoursPerEmpInvalid.toFixed(1)}h pro Person < ${minHoursPerEmployee}h Minimum → Leerlauf`
+    });
+  }
+
+  // SCHRITT 2: Bewerte alle gültigen Konfigurationen
+  let optimalEmployees = 1;
+  let bestScore = -Infinity;
+  let bestConfig = null;
+  const scoredConfigurations = [];
+
+  for (const config of validConfigurations) {
+    // Score nur für Anzeige / Analyse
+    const scoreResult = calculateConfigurationScore(
+      config,
+      baselineDays,
+      maxEfficiencyLoss,
+      optimizationWeights
+    );
+
+    scoredConfigurations.push({
+      ...config,
+      ...scoreResult
+    });
+
+    // Log bleibt vollständig
+    const requiredWeeks = config.employees > 1 ? config.employees - 1 : 0;
+    const ruleInfo = config.employees > 1
+      ? ` (Regel: ≤ ${requiredWeeks * 5} Tage)`
+      : '';
+
+    result.reasoning.push({
+      type: 'info',
+      text: `${config.employees} MA: ${config.daysNeeded.toFixed(2)} Tage${ruleInfo}, `
+        + `${config.hoursPerEmp.toFixed(1)}h/MA `
+        + `(${(config.utilizationRate * 100).toFixed(0)}%), `
+        + `${config.totalEfficiencyLoss}% Effizienz → Score ${scoreResult.totalScore.toFixed(1)}`
+    });
+
+    // ✅ ENTSCHEIDUNG: ERSTE gültige Konfiguration gewinnt
+    if (!bestConfig) {
+      bestConfig = { ...config, ...scoreResult };
+      optimalEmployees = config.employees;
     }
+  }
 
-    // === NEU: Effizienz-Verlust prüfen ===
-    // Pro zusätzlichem Mitarbeiter ca. 5% Effizienzverlust durch Koordination
-    const efficiencyLossPerEmployee = 5; // 5% pro zusätzlichem MA
-    const totalEfficiencyLoss = (emp - 1) * efficiencyLossPerEmployee;
+  // SCHRITT 3: Setze Ergebnis basierend auf bester Konfiguration
+  if (bestConfig) {
+    result.hoursPerEmployee = bestConfig.hoursPerEmp;
+    result.recommendedDays = bestConfig.daysNeeded;
 
-    if (totalEfficiencyLoss > maxEfficiencyLoss && emp > 1) {
+    // Zusätzliche Info für gewählte Konfiguration
+    if (optimalEmployees > 1) {
+      const requiredWeeks = optimalEmployees - 1;
+      const maxDaysAllowed = requiredWeeks * 5;
       result.reasoning.push({
-        type: 'warning',
-        text: `${emp} Mitarbeiter: ${totalEfficiencyLoss}% Effizienzverlust > ${maxEfficiencyLoss}% Maximum`
+        type: 'success',
+        text: `✅ Gewählt: ${optimalEmployees} Mitarbeiter → ${bestConfig.daysNeeded} Tage (${bestConfig.hoursPerEmp.toFixed(1)}h pro Person, ${(bestConfig.utilizationRate * 100).toFixed(0)}% Auslastung) - Regel erfüllt: ${optimalEmployees} MA können auf ≤ ${requiredWeeks} Woche(n) (${maxDaysAllowed} Tage) reduziert werden`
       });
-      continue;
-    }
 
-    // Prüfe ob der "Rest des Tages unproduktiv" Fall auftritt
-    const restOfLastDay = (daysNeeded * dailyHours) - hoursPerEmp;
-    if (restOfLastDay > (dailyHours * 0.5) && emp > 1) {
-      // Mehr als halber Tag Leerlauf → nicht sinnvoll
-      result.reasoning.push({
-        type: 'warning',
-        text: `${emp} Mitarbeiter: ${restOfLastDay.toFixed(1)}h Leerlauf am letzten Tag → ineffizient`
-      });
-      continue;
-    }
+      if (bestConfig.totalEfficiencyLoss > 0) {
+        result.reasoning.push({
+          type: 'info',
+          text: `Hinweis: ${bestConfig.totalEfficiencyLoss}% Koordinations-Overhead durch ${optimalEmployees} Mitarbeiter`
+        });
+      }
 
-    // Diese Konfiguration ist akzeptabel
-    optimalEmployees = emp;
-    result.hoursPerEmployee = hoursPerEmp;
-
-    // Effizienz-Info hinzufügen wenn mehr als 1 MA
-    if (emp > 1 && totalEfficiencyLoss > 0) {
-      result.reasoning.push({
-        type: 'info',
-        text: `${emp} Mitarbeiter: ${totalEfficiencyLoss}% Koordinations-Overhead (akzeptabel)`
-      });
+      // Zeige Einsparung an Tagen
+      if (bestConfig.daysSaved > 0) {
+        result.reasoning.push({
+          type: 'info',
+          text: `Zeitersparnis: ${bestConfig.daysSaved} Tag(e) weniger beim Kunden im Vergleich zu 1 Mitarbeiter`
+        });
+      }
     }
   }
 
@@ -388,19 +669,28 @@ export async function calculateOptimalEmployeesAdvanced(
     });
   }
 
-  // === REGEL 7: Tipp für Parallelarbeit ===
-  if (customerApproval && uniqueObjects > 1 && optimalEmployees < uniqueObjects) {
+  // === REGEL 7: Info über Parallelarbeit ===
+  if (!canWorkParallel && optimalEmployees > 1) {
     result.reasoning.push({
-      type: 'tip',
-      text: `Tipp: Mit Kundenfreigabe könnten während der Trocknungszeiten Arbeiten in anderen Räumen durchgeführt werden.`
+      type: 'info',
+      text: `Hinweis: ${optimalEmployees} Mitarbeiter arbeiten nacheinander (keine Parallelarbeit möglich ohne Kundenfreigabe oder bei nur 1 Objekt).`
     });
-  } else if (!customerApproval && uniqueObjects > 1 && totalWaitTime > 0) {
+  } else if (canWorkParallel && optimalEmployees > 1) {
+    result.reasoning.push({
+      type: 'info',
+      text: `Hinweis: ${optimalEmployees} Mitarbeiter können parallel in verschiedenen Räumen arbeiten.`
+    });
+  }
+
+  // === REGEL 8: Tipp für Parallelarbeit ===
+  if (!customerApproval && uniqueObjects > 1 && totalWaitTime > 0) {
     result.reasoning.push({
       type: 'parallel',
       text: `Tipp: Mit Kundenfreigabe könnten während der Trocknungszeiten Arbeiten in anderen Räumen durchgeführt werden.`
     });
   }
 
+  // Setze finale Werte
   result.optimalEmployees = optimalEmployees;
   result.recommendedDays = Math.ceil(result.hoursPerEmployee / dailyHours);
 
@@ -426,14 +716,31 @@ export function calculateOptimalEmployees(totalHours, dailyHours = HOURS_PER_DAY
 }
 
 /**
- * NEUE INTELLIGENTE TAGESPLANUNG
+ * ============================================================================
+ * NEUE INTELLIGENTE TAGESPLANUNG MIT PARALLELER ARBEIT
+ * ============================================================================
  * 
- * Optimiert die Tagesfüllung durch:
- * 1. Trocknungszeiten für andere Arbeiten nutzen
- * 2. Tasks über Tage aufteilen wenn nötig
- * 3. Logische Abhängigkeiten respektieren
- * 4. Tage so voll wie möglich füllen
- * 5. Überstunden-Toleranz für kleine Rest-Tasks
+ * OPTIMIERUNGEN:
+ * 1. ✅ PARALLELE ARBEIT: Pro Iteration werden ALLE verfügbaren Mitarbeiter
+ *    gleichzeitig beschäftigt (nicht mehr sequenziell)
+ * 2. ✅ RAUM-BASIERTE PLANUNG: Aufgaben werden pro Raum geplant, damit
+ *    mehrere Mitarbeiter gleichzeitig in verschiedenen Räumen arbeiten können
+ * 3. ✅ VOLLE AUSLASTUNG: Jeder Mitarbeiter muss mindestens minHoursPerEmployee
+ *    arbeiten, bevor ein neuer Tag beginnt
+ * 4. ✅ TROCKNUNGSZEITEN NUTZEN: Während Trocknungszeiten werden Arbeiten
+ *    in anderen Räumen durchgeführt
+ * 5. ✅ LOGISCHE ABHÄNGIGKEITEN: Cross-Object Abhängigkeiten werden respektiert
+ * 6. ✅ ÜBERSTUNDEN-TOLERANZ: Kleine Rest-Tasks können mit Überstunden abgeschlossen werden
+ * 
+ * NEUE DATENSTRUKTUR FÜR VISUALISIERUNG:
+ * - tasksByRoom: Gruppiert Tasks nach Räumen für Zeitstrahl-Visualisierung
+ * - employeeStats: Statistiken pro Mitarbeiter (Arbeitszeit, Aufgaben)
+ * - employeeUtilization: Auslastung pro Mitarbeiter in Prozent
+ * - minHoursViolations: Verstöße gegen Mindeststunden-Regel
+ * 
+ * @param {Array} calculations - Alle Berechnungen
+ * @param {boolean} customerApproval - Kundenfreigabe für Parallelarbeit
+ * @returns {Object} Workflow-Planung mit Tagen, Mitarbeiter-Statistiken und Raum-basierten Daten
  */
 export async function planWorkflowOptimized(calculations, customerApproval) {
   const companySettings = await databaseService.getCompanySettings();
@@ -443,6 +750,12 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
   const maxOvertimePercent = companySettings?.maxOvertimePercent ?? 15;
   const minTaskSplitTime = companySettings?.minTaskSplitTime ?? 60;
   const maxDayMinutes = Math.round(dailyMinutes * (1 + maxOvertimePercent / 100));
+
+  // WICHTIG: Mehrpersonal-Regeln für Tagesplanung
+  // Diese Regeln müssen für JEDEN einzelnen Mitarbeiter gelten, nicht nur für den ersten
+  const minHoursPerEmployee = companySettings?.minHoursPerEmployee || 6;
+  const minMinutesPerEmployee = minHoursPerEmployee * 60;
+  const allowParallelRooms = companySettings?.allowParallelRoomWork ?? true;
 
   // NEU: Alle Objekte laden für Cross-Object Abhängigkeiten
   const allObjects = await databaseService.getAllObjects();
@@ -571,12 +884,13 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
 
         // NEU: Prüfe ob ein anderer Mitarbeiter dieses Objekt gerade bearbeitet
         // Mehrere MA können nur in UNTERSCHIEDLICHEN Räumen gleichzeitig arbeiten
+        // WICHTIG: Diese Regel gilt für ALLE Mitarbeiter, nicht nur für den ersten
         const otherEmployeeInSameObject = employeeSchedules.some(
           e => e.id !== employee.id && e.currentObjectId === objectId && e.currentDayMinutes < dailyMinutes
         );
         if (otherEmployeeInSameObject && numberOfEmployees > 1) {
-          // Nur erlauben wenn Kundenfreigabe UND verschiedene Arbeitsbereiche
-          if (!customerApproval) continue;
+          // Nur erlauben wenn Kundenfreigabe UND allowParallelRooms aktiviert ist
+          if (!customerApproval || !allowParallelRooms) continue;
         }
 
         availableTasks.push({
@@ -588,8 +902,9 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
       }
     }
 
-    // Priorität 2: Task aus anderem Objekt (wenn Kundenfreigabe oder Trocknungszeit)
-    if ((customerApproval || activeDryingPhases.length > 0) && availableTasks.length === 0) {
+    // Priorität 2: Task aus anderem Objekt (wenn Kundenfreigabe UND allowParallelRooms oder Trocknungszeit)
+    // WICHTIG: allowParallelRooms muss aktiviert sein für Parallelarbeit in verschiedenen Räumen
+    if (((customerApproval && allowParallelRooms) || activeDryingPhases.length > 0) && availableTasks.length === 0) {
       for (const objectId of objectIds) {
         const tasks = tasksByObject[objectId];
 
@@ -695,15 +1010,20 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
       }
     }
 
+    // WICHTIG: Finde objectName aus allObjects für UI-Visualisierung
+    const object = allObjects.find(obj => obj.id === objectId);
+    const objectName = object?.name || `Raum ${objectId}`;
+
     // Task oder Teil davon einplanen
     const taskEntry = {
       taskId: task.id,
       objectId: objectId,
+      objectName: objectName, // NEU: Für UI-Visualisierung benötigt
       serviceId: task.serviceId,
       serviceName: task.serviceName,
       workArea: task.workArea,
       startTime: employee.currentDayMinutes,
-      duration: timeToSchedule,
+      duration: timeToSchedule, // WICHTIG: duration ist in Minuten
       isPartial: isPartial,
       isContinuation: task.totalTime !== task.remainingTime,
       isOvertime: isOvertime,
@@ -760,150 +1080,394 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
     return true;
   }
 
-  // NEU: Finde den Mitarbeiter mit der geringsten Arbeitszeit heute
-  function getAvailableEmployee() {
-    // Sortiere nach verfügbarer Zeit (wer am wenigsten gearbeitet hat)
+  /**
+   * ============================================================================
+   * NEUE STRATEGIE: PARALLELE ARBEIT FÖRDERN
+   * ============================================================================
+   * 
+   * Diese Funktion versucht, für ALLE verfügbaren Mitarbeiter gleichzeitig
+   * Aufgaben zu finden, um parallele Arbeit in verschiedenen Räumen zu fördern.
+   * 
+   * PRIORITÄTEN:
+   * 1. Mitarbeiter unter minHoursPerEmployee haben höchste Priorität
+   * 2. Parallele Arbeit in verschiedenen Räumen wird bevorzugt
+   * 3. Jeder Mitarbeiter soll voll ausgelastet werden
+   */
+
+  // NEU: Finde alle verfügbaren Mitarbeiter (sortiert nach Priorität)
+  function getAllAvailableEmployees() {
     const available = employeeSchedules
       .filter(e => e.currentDayMinutes < maxDayMinutes)
-      .sort((a, b) => a.currentDayMinutes - b.currentDayMinutes);
+      .sort((a, b) => {
+        // PRIORITÄT 1: Mitarbeiter unter minHoursPerEmployee zuerst
+        const aUnderMin = (a.currentDayMinutes / 60) < minHoursPerEmployee;
+        const bUnderMin = (b.currentDayMinutes / 60) < minHoursPerEmployee;
 
+        if (aUnderMin && !bUnderMin) return -1;
+        if (!aUnderMin && bUnderMin) return 1;
+
+        // PRIORITÄT 2: Weniger gearbeitet = höhere Priorität
+        return a.currentDayMinutes - b.currentDayMinutes;
+      });
+
+    return available;
+  }
+
+  // NEU: Finde den Mitarbeiter mit der geringsten Arbeitszeit heute
+  // WICHTIG: Berücksichtigt Mehrpersonal-Regeln - bevorzugt Mitarbeiter, die noch unter dem Minimum sind
+  function getAvailableEmployee() {
+    const available = getAllAvailableEmployees();
     return available.length > 0 ? available[0] : null;
   }
 
-  // Hauptschleife: Tage füllen (MEHRPERSONAL-Version)
+  /**
+   * ============================================================================
+   * NEUE FUNKTION: Parallele Aufgaben-Zuweisung pro Iteration
+   * ============================================================================
+   * 
+   * Diese Funktion versucht, für ALLE verfügbaren Mitarbeiter gleichzeitig
+   * Aufgaben zu finden, um parallele Arbeit zu fördern.
+   * 
+   * STRATEGIE:
+   * 1. Finde alle verfügbaren Mitarbeiter
+   * 2. Für jeden Mitarbeiter: Finde beste verfügbare Aufgabe
+   * 3. Bevorzuge parallele Arbeit in verschiedenen Räumen
+   * 4. Weise Aufgaben zu, wenn möglich
+   * 
+   * @returns {Object} { assigned: number, employees: Array } - Anzahl zugewiesener Aufgaben
+   */
+  function assignTasksToAllAvailableEmployees() {
+    const availableEmployees = getAllAvailableEmployees();
+    if (availableEmployees.length === 0) {
+      return { assigned: 0, employees: [] };
+    }
+
+    let assignedCount = 0;
+    const assignedEmployees = [];
+    const usedObjectIds = new Set(); // Verhindere Konflikte im selben Raum (wenn nicht erlaubt)
+
+    // Sortiere Mitarbeiter: Die mit wenigsten Stunden zuerst
+    // Dies stellt sicher, dass alle Mitarbeiter gleichmäßig ausgelastet werden
+    const sortedEmployees = [...availableEmployees].sort((a, b) => {
+      // Mitarbeiter unter Minimum haben höchste Priorität
+      const aUnderMin = (a.currentDayMinutes / 60) < minHoursPerEmployee;
+      const bUnderMin = (b.currentDayMinutes / 60) < minHoursPerEmployee;
+
+      if (aUnderMin && !bUnderMin) return -1;
+      if (!aUnderMin && bUnderMin) return 1;
+
+      // Dann nach Arbeitszeit (weniger = höhere Priorität)
+      return a.currentDayMinutes - b.currentDayMinutes;
+    });
+
+    // Versuche für jeden verfügbaren Mitarbeiter eine Aufgabe zu finden
+    for (const employee of sortedEmployees) {
+      // Prüfe ob Mitarbeiter noch Kapazität hat
+      if (employee.currentDayMinutes >= maxDayMinutes) continue;
+
+      // Finde beste verfügbare Aufgabe für diesen Mitarbeiter
+      const next = getNextAvailableTask(employee);
+
+      if (next) {
+        // Prüfe ob parallele Arbeit im selben Raum erlaubt ist
+        const otherEmployeeInSameObject = employeeSchedules.some(
+          e => e.id !== employee.id &&
+            e.currentObjectId === next.objectId &&
+            e.currentDayMinutes < maxDayMinutes
+        );
+
+        // Wenn anderer Mitarbeiter im selben Raum arbeitet, prüfe ob erlaubt
+        if (otherEmployeeInSameObject && numberOfEmployees > 1) {
+          if (!customerApproval || !allowParallelRooms) {
+            // Parallele Arbeit im selben Raum nicht erlaubt → überspringe
+            continue;
+          }
+        }
+
+        // Versuche Aufgabe zuzuweisen
+        const added = addTaskToDay(next.task, next.objectId, employee);
+
+        if (added) {
+          assignedCount++;
+          assignedEmployees.push({
+            employee: employee.name,
+            task: next.task.serviceName,
+            objectId: next.objectId
+          });
+
+          // Markiere Raum als verwendet (wenn nicht erlaubt, mehrere MA im selben Raum)
+          if (!customerApproval || !allowParallelRooms) {
+            usedObjectIds.add(next.objectId);
+          }
+        }
+      }
+    }
+
+    return { assigned: assignedCount, employees: assignedEmployees };
+  }
+
+  // NEU: Prüfe ob alle Mitarbeiter die Mindeststunden-Regel erfüllen
+  // Diese Funktion wird am Ende jedes Tages aufgerufen, um Verstöße zu erkennen
+  function checkMinHoursPerEmployeeRule(employeeSchedules, currentDayNumber) {
+    const violations = [];
+    for (const emp of employeeSchedules) {
+      const empHours = emp.currentDayMinutes / 60;
+      // Prüfe nur wenn der Mitarbeiter gearbeitet hat (currentDayMinutes > 0)
+      // und unter dem Minimum liegt
+      if (empHours > 0 && empHours < minHoursPerEmployee) {
+        violations.push({
+          employeeId: emp.id,
+          employeeName: emp.name,
+          hours: empHours,
+          minRequired: minHoursPerEmployee
+        });
+      }
+    }
+    return violations;
+  }
+
+  /**
+   * ============================================================================
+   * NEU: Hilfsfunktion zum Beenden eines Tages mit Prüfung der Mehrpersonal-Regeln
+   * ============================================================================
+   * 
+   * Diese Funktion:
+   * 1. Prüft ob alle Mitarbeiter mindestens minHoursPerEmployee gearbeitet haben
+   * 2. Speichert Verstöße für spätere Anzeige
+   * 3. Berechnet Überstunden
+   * 4. Erweitert Tag-Objekt um Raum-basierte Informationen für Visualisierung
+   */
+  function endCurrentDay() {
+    // Prüfe ob alle Mitarbeiter die Mindeststunden-Regel erfüllen
+    if (currentDay.tasks.length > 0) {
+      const violations = checkMinHoursPerEmployeeRule(employeeSchedules, currentDay.day);
+      if (violations.length > 0) {
+        console.warn(`⚠️ Tag ${currentDay.day}: ${violations.length} Mitarbeiter unter Mindeststunden:`, violations.map(v => `${v.employeeName}: ${v.hours.toFixed(2)}h < ${v.minRequired}h`).join(', '));
+        // Speichere Verstöße im Tag-Objekt für spätere Anzeige
+        currentDay.minHoursViolations = violations;
+      }
+    }
+
+    // NEU: Erweitere Tag-Objekt um Raum-basierte Informationen für Visualisierung
+    // Gruppiere Tasks nach Räumen für Zeitstrahl-Visualisierung
+    const tasksByRoom = {};
+    const employeeStats = {};
+
+    for (const task of currentDay.tasks) {
+      const roomId = task.objectId;
+      if (!tasksByRoom[roomId]) {
+        tasksByRoom[roomId] = [];
+      }
+      tasksByRoom[roomId].push(task);
+
+      // Sammle Mitarbeiter-Statistiken
+      if (task.employeeId) {
+        if (!employeeStats[task.employeeId]) {
+          employeeStats[task.employeeId] = {
+            employeeId: task.employeeId,
+            employeeName: task.employeeName,
+            totalMinutes: 0,
+            tasks: []
+          };
+        }
+        employeeStats[task.employeeId].totalMinutes += task.duration;
+        employeeStats[task.employeeId].tasks.push(task);
+      }
+    }
+
+    // Speichere Raum-basierte Struktur für UI-Visualisierung
+    currentDay.tasksByRoom = tasksByRoom;
+    currentDay.employeeStats = Object.values(employeeStats);
+
+    // Berechne Auslastung pro Mitarbeiter
+    currentDay.employeeUtilization = employeeSchedules.map(emp => ({
+      employeeId: emp.id,
+      employeeName: emp.name,
+      minutes: emp.currentDayMinutes,
+      hours: emp.currentDayMinutes / 60,
+      utilizationPercent: (emp.currentDayMinutes / dailyMinutes) * 100,
+      meetsMinimum: (emp.currentDayMinutes / 60) >= minHoursPerEmployee || emp.currentDayMinutes === 0
+    }));
+
+    // Tag abschließen
+    currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
+    currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
+    days.push(currentDay);
+    currentDay = createNewDay(days.length + 1);
+
+    // Mitarbeiter-Zeiten zurücksetzen für neuen Tag
+    employeeSchedules.forEach(e => {
+      e.currentDayMinutes = 0;
+      e.currentObjectId = null;
+    });
+    activeDryingPhases = [];
+  }
+
+  /**
+   * ============================================================================
+   * HAUPTSCHLEIFE: PARALLELE TAGESPLANUNG
+   * ============================================================================
+   * 
+   * NEUE STRATEGIE:
+   * - Pro Iteration werden ALLE verfügbaren Mitarbeiter parallel beschäftigt
+   * - Bevorzugt parallele Arbeit in verschiedenen Räumen
+   * - Sichert vollständige Auslastung jedes Mitarbeiters (mindestens minHoursPerEmployee)
+   * 
+   * ABLAUF:
+   * 1. Prüfe ob alle Tasks erledigt sind
+   * 2. Versuche für ALLE verfügbaren Mitarbeiter gleichzeitig Aufgaben zu finden
+   * 3. Wenn keine Aufgaben mehr zugewiesen werden können → Tag beenden oder Trocknungszeit vorspulen
+   * 4. Prüfe Mindeststunden vor Tagwechsel
+   */
   let iterations = 0;
   const maxIterations = 1000; // Sicherheit gegen Endlosschleifen
+  let noProgressCount = 0; // Zähler für Iterationen ohne Fortschritt
 
   while (iterations < maxIterations) {
     iterations++;
 
     // Prüfe ob alle Tasks erledigt sind
     const allDone = allTasks.every(t => t.remainingTime <= 0);
-    if (allDone) break;
+    if (allDone) {
+      // Prüfe Mindeststunden vor Beendigung
+      const violations = checkMinHoursPerEmployeeRule(employeeSchedules, currentDay.day);
+      if (violations.length > 0 && currentDay.tasks.length > 0) {
+        console.warn(`⚠️ Alle Tasks erledigt, aber ${violations.length} Mitarbeiter unter Mindeststunden`);
+        // Versuche noch Aufgaben zu finden, um Mindeststunden zu erfüllen
+        // (wird in der nächsten Iteration behandelt)
+      } else {
+        break;
+      }
+    }
 
     // Abgelaufene Trocknungsphasen entfernen (basierend auf Mitarbeiter-Zeit)
     const maxEmployeeTime = Math.max(...employeeSchedules.map(e => e.currentDayMinutes));
     activeDryingPhases = activeDryingPhases.filter(d => d.endsAt > maxEmployeeTime);
 
-    // NEU: Finde verfügbaren Mitarbeiter
-    const employee = getAvailableEmployee();
+    // NEUE STRATEGIE: Versuche für ALLE verfügbaren Mitarbeiter gleichzeitig Aufgaben zu finden
+    const assignmentResult = assignTasksToAllAvailableEmployees();
 
-    if (!employee) {
-      // Alle Mitarbeiter haben ihr Tageslimit erreicht → neuen Tag starten
-      currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
-      currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
-      days.push(currentDay);
-      currentDay = createNewDay(days.length + 1);
-      // Mitarbeiter-Zeiten zurücksetzen für neuen Tag
-      employeeSchedules.forEach(e => {
-        e.currentDayMinutes = 0;
-        e.currentObjectId = null;
-      });
-      activeDryingPhases = [];
+    if (assignmentResult.assigned > 0) {
+      // Erfolgreich Aufgaben zugewiesen → Fortschritt
+      noProgressCount = 0;
+
+      if (assignmentResult.assigned > 1) {
+        console.log(`✅ Parallele Arbeit: ${assignmentResult.assigned} Aufgaben gleichzeitig zugewiesen`);
+      }
+
+      // Nach erfolgreicher Zuweisung: Prüfe ob wir während einer Trocknungsphase sind
+      // und ob wir zu einem anderen Objekt wechseln können
+      if (activeDryingPhases.length > 0 && customerApproval && allowParallelRooms) {
+        // Wechsle zum nächsten Objekt für bessere Verteilung
+        currentObjectIndex = (currentObjectIndex + 1) % objectIds.length;
+      }
+
+      continue; // Weiter mit nächster Iteration
+    }
+
+    // Keine Aufgaben mehr zugewiesen → prüfe nächste Schritte
+    noProgressCount++;
+
+    // Prüfe ob alle Mitarbeiter voll ausgelastet sind
+    const allEmployeesFull = employeeSchedules.every(e =>
+      e.currentDayMinutes >= maxDayMinutes * 0.95 ||
+      (e.currentDayMinutes > 0 && e.currentDayMinutes >= dailyMinutes)
+    );
+
+    if (allEmployeesFull) {
+      // Alle Mitarbeiter voll - prüfe Mindeststunden und beende Tag
+      const violations = checkMinHoursPerEmployeeRule(employeeSchedules, currentDay.day);
+      if (violations.length > 0) {
+        console.warn(`⚠️ Tag ${currentDay.day}: ${violations.length} Mitarbeiter unter Mindeststunden, aber keine weiteren Aufgaben verfügbar`);
+      }
+      endCurrentDay();
       continue;
     }
 
-    // Nächsten Task für diesen Mitarbeiter finden
-    const next = getNextAvailableTask(employee);
+    // Prüfe Trocknungsphasen
+    if (activeDryingPhases.length > 0) {
+      const minDryingEnd = Math.min(...activeDryingPhases.map(d => d.endsAt));
 
-    if (next) {
-      const added = addTaskToDay(next.task, next.objectId, employee);
-
-      if (!added) {
-        // Dieser Mitarbeiter kann nichts mehr hinzufügen
-        // Markiere als "voll" für heute
-        employee.currentDayMinutes = maxDayMinutes;
-        continue;
-      }
-
-      // Nach jedem Task: Prüfen ob wir während einer Trocknungsphase sind
-      // und ob wir zu einem anderen Objekt wechseln können
-      if (activeDryingPhases.length > 0 && customerApproval) {
-        // Wechsle zum nächsten Objekt
-        currentObjectIndex = (currentObjectIndex + 1) % objectIds.length;
-      }
-    } else {
-      // Kein Task verfügbar für diesen Mitarbeiter
-      const allEmployeesFull = employeeSchedules.every(e => e.currentDayMinutes >= maxDayMinutes * 0.95);
-
-      if (allEmployeesFull) {
-        // Alle Mitarbeiter voll - Tag beenden
-        currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
-        currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
-        days.push(currentDay);
-        currentDay = createNewDay(days.length + 1);
+      if (minDryingEnd <= maxDayMinutes) {
+        // Trocknung endet heute noch - Zeit für alle Mitarbeiter vorspulen
         employeeSchedules.forEach(e => {
-          e.currentDayMinutes = 0;
-          e.currentObjectId = null;
+          if (e.currentDayMinutes < minDryingEnd) {
+            e.currentDayMinutes = minDryingEnd;
+          }
         });
-        activeDryingPhases = [];
-      } else if (activeDryingPhases.length > 0) {
-        // Trocknungszeit - Zeit vorspulen zur nächsten Aktivität
-        const minDryingEnd = Math.min(...activeDryingPhases.map(d => d.endsAt));
+        currentDay.minutes = Math.max(...employeeSchedules.map(e => e.currentDayMinutes));
+        currentDay.hours = currentDay.minutes / 60;
+        activeDryingPhases = activeDryingPhases.filter(d => d.endsAt > currentDay.minutes);
+        noProgressCount = 0; // Fortschritt durch Zeitvorspulen
+        continue;
+      } else {
+        // Trocknung dauert bis morgen
+        // Prüfen ob noch unerledigte Tasks in anderen Objekten gibt
+        const unfinishedOtherObjects = allTasks.filter(t =>
+          t.remainingTime > 0 &&
+          !activeDryingPhases.some(d => d.objectId === t.objectId)
+        );
 
-        if (minDryingEnd <= maxDayMinutes) {
-          // Trocknung endet heute noch - Zeit für alle Mitarbeiter vorspulen
+        if (unfinishedOtherObjects.length > 0 && customerApproval && allowParallelRooms) {
+          // Es gibt noch Arbeit in anderen Räumen - weitermachen
+          // Markiere alle Mitarbeiter als wartend, die keine Aufgaben mehr haben
           employeeSchedules.forEach(e => {
-            if (e.currentDayMinutes < minDryingEnd) {
-              e.currentDayMinutes = minDryingEnd;
+            if (e.currentDayMinutes < minMinutesPerEmployee) {
+              // Mitarbeiter unter Minimum → versuche noch Aufgaben zu finden
+              const next = getNextAvailableTask(e);
+              if (!next) {
+                // Keine Aufgaben mehr → markiere als wartend
+                e.currentDayMinutes = maxDayMinutes;
+              }
+            } else if (e.currentDayMinutes < maxDayMinutes) {
+              // Mitarbeiter hat noch Kapazität, aber keine Aufgabe gefunden
+              // Markiere als wartend (wird in nächster Iteration erneut versucht)
             }
           });
-          currentDay.minutes = Math.max(...employeeSchedules.map(e => e.currentDayMinutes));
-          currentDay.hours = currentDay.minutes / 60;
-          activeDryingPhases = activeDryingPhases.filter(d => d.endsAt > currentDay.minutes);
+          continue;
         } else {
-          // Trocknung dauert bis morgen
-          // Prüfen ob noch unerledigte Tasks in anderen Objekten gibt
-          const unfinishedOtherObjects = allTasks.filter(t =>
-            t.remainingTime > 0 &&
-            !activeDryingPhases.some(d => d.objectId === t.objectId)
-          );
-
-          if (unfinishedOtherObjects.length > 0 && customerApproval) {
-            // Es gibt noch Arbeit in anderen Räumen - weitermachen
-            // Markiere aktuellen Mitarbeiter als wartend
-            employee.currentDayMinutes = maxDayMinutes;
-            continue;
-          } else {
-            // Tag beenden - Trocknung über Nacht
-            currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
-            currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
-            days.push(currentDay);
-            currentDay = createNewDay(days.length + 1);
-            employeeSchedules.forEach(e => {
-              e.currentDayMinutes = 0;
-              e.currentObjectId = null;
-            });
-            activeDryingPhases = [];
-          }
-        }
-      } else {
-        // Keine Trocknungsphase und kein Task für diesen Mitarbeiter
-        // Markiere Mitarbeiter als fertig für heute
-        employee.currentDayMinutes = maxDayMinutes;
-
-        // Prüfe ob ALLE Mitarbeiter fertig sind
-        const allEmployeesDone = employeeSchedules.every(e => e.currentDayMinutes >= maxDayMinutes);
-        if (allEmployeesDone) {
-          if (currentDay.tasks.length > 0) {
-            currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
-            currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
-            days.push(currentDay);
-            currentDay = createNewDay(days.length + 1);
-            employeeSchedules.forEach(e => {
-              e.currentDayMinutes = 0;
-              e.currentObjectId = null;
-            });
-          } else {
-            break; // Verhindern von leeren Tagen
-          }
+          // Tag beenden - Trocknung über Nacht
+          endCurrentDay();
+          continue;
         }
       }
+    }
+
+    // Keine Trocknungsphase und keine Aufgaben mehr
+    // Prüfe ob Mitarbeiter unter Mindeststunden sind
+    const violations = checkMinHoursPerEmployeeRule(employeeSchedules, currentDay.day);
+    const employeesUnderMin = employeeSchedules.filter(e =>
+      e.currentDayMinutes > 0 &&
+      (e.currentDayMinutes / 60) < minHoursPerEmployee &&
+      e.currentDayMinutes < maxDayMinutes
+    );
+
+    if (employeesUnderMin.length > 0 && noProgressCount < 10) {
+      // Es gibt noch Mitarbeiter unter Minimum → versuche weiter Aufgaben zu finden
+      // (könnte durch Abhängigkeiten blockiert sein)
+      continue;
+    }
+
+    // Keine weiteren Aufgaben möglich → Tag beenden
+    if (currentDay.tasks.length > 0) {
+      if (violations.length > 0) {
+        console.warn(`⚠️ Tag ${currentDay.day} beendet mit ${violations.length} Mitarbeiter(n) unter Mindeststunden`);
+      }
+      endCurrentDay();
+    } else {
+      // Leerer Tag → beende Schleife
+      break;
     }
   }
 
   // Letzten Tag hinzufügen
   if (currentDay.tasks.length > 0) {
+    // Prüfe ob alle Mitarbeiter die Mindeststunden-Regel erfüllen
+    const violations = checkMinHoursPerEmployeeRule(employeeSchedules, currentDay.day);
+    if (violations.length > 0) {
+      console.warn(`⚠️ Tag ${currentDay.day}: ${violations.length} Mitarbeiter unter Mindeststunden:`, violations.map(v => `${v.employeeName}: ${v.hours.toFixed(2)}h < ${v.minRequired}h`).join(', '));
+      currentDay.minHoursViolations = violations;
+    }
     currentDay.overtimeMinutes = Math.max(0, currentDay.minutes - dailyMinutes);
     currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
     days.push(currentDay);
@@ -945,6 +1509,16 @@ export async function planWorkflowOptimized(calculations, customerApproval) {
   };
 }
 
+/**
+ * ============================================================================
+ * Hilfsfunktion: Erstellt ein neues Tag-Objekt
+ * ============================================================================
+ * 
+ * Erweitert um Felder für:
+ * - Raum-basierte Visualisierung (tasksByRoom)
+ * - Mitarbeiter-Statistiken (employeeStats, employeeUtilization)
+ * - Mindeststunden-Verstöße (minHoursViolations)
+ */
 function createNewDay(dayNumber) {
   return {
     day: dayNumber,
@@ -953,7 +1527,12 @@ function createNewDay(dayNumber) {
     tasks: [],
     waitTimes: [],
     hasOvertime: false,
-    overtimeMinutes: 0
+    overtimeMinutes: 0,
+    // NEU: Erweiterte Felder für Visualisierung
+    tasksByRoom: {}, // Gruppiert nach Raum-ID für Zeitstrahl-Visualisierung
+    employeeStats: [], // Statistiken pro Mitarbeiter
+    employeeUtilization: [], // Auslastung pro Mitarbeiter
+    minHoursViolations: [] // Verstöße gegen Mindeststunden-Regel
   };
 }
 

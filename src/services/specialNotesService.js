@@ -7,16 +7,16 @@ export async function applySpecialNoteFactors(baseTime, specialNoteIds) {
   if (!specialNoteIds || specialNoteIds.length === 0) {
     return baseTime;
   }
-  
+
   let multiplier = 1;
-  
+
   for (const noteId of specialNoteIds) {
     const specialService = await databaseService.getSpecialServiceById(noteId);
     if (specialService && specialService.factor) {
       multiplier *= specialService.factor;
     }
   }
-  
+
   return baseTime * multiplier;
 }
 
@@ -29,9 +29,9 @@ export async function getRequiredServicesFromSpecialNotes(specialNoteIds) {
   if (!specialNoteIds || specialNoteIds.length === 0) {
     return [];
   }
-  
+
   const requiredServiceIds = [];
-  
+
   for (const noteId of specialNoteIds) {
     const specialService = await databaseService.getSpecialServiceById(noteId);
     if (specialService && specialService.requiredService) {
@@ -43,7 +43,21 @@ export async function getRequiredServicesFromSpecialNotes(specialNoteIds) {
       }
     }
   }
-  
+
+  // Prioritätslogik: Wenn Isoliergrundierung aktiviert ist, wird der zusätzliche Grundanstrich nicht benötigt
+  // Die Isoliergrundierung reicht aus und übernimmt die Funktion des zusätzlichen Grundanstrichs
+  const ISOLIERGRUNDIERUNG_ID = 'service_isoliergrundierung';
+  const ZUSAETZLICHER_GRUNDANSTRICH_ID = 'service_zusaetzlicher_grundanstrich';
+
+  if (requiredServiceIds.includes(ISOLIERGRUNDIERUNG_ID)) {
+    const index = requiredServiceIds.indexOf(ZUSAETZLICHER_GRUNDANSTRICH_ID);
+    if (index !== -1) {
+      requiredServiceIds.splice(index, 1);
+      const zusaetzlicherGrundanstrich = await databaseService.getServiceById(ZUSAETZLICHER_GRUNDANSTRICH_ID);
+      console.log(`⚠️ Isoliergrundierung ist aktiviert - "${zusaetzlicherGrundanstrich?.title || ZUSAETZLICHER_GRUNDANSTRICH_ID}" wird nicht hinzugefügt, da Isoliergrundierung bereits ausreicht.`);
+    }
+  }
+
   return requiredServiceIds;
 }
 
@@ -53,12 +67,12 @@ export async function getRequiredServicesFromSpecialNotes(specialNoteIds) {
 export async function isSpecialNoteRelevantForService(specialNoteId, serviceId) {
   const specialService = await databaseService.getSpecialServiceById(specialNoteId);
   if (!specialService) return false;
-  
+
   // Wenn keine spezifischen Leistungen definiert, gilt für alle
   if (!specialService.affectsService || specialService.affectsService.length === 0) {
     return true;
   }
-  
+
   return specialService.affectsService.includes(serviceId);
 }
 

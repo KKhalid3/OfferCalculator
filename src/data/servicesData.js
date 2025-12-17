@@ -213,7 +213,7 @@ export const servicesData = [
         parentServiceId: '',
         serviceType: 'Unterleistung Backend',
         variant: 'vollflächig spachteln, Trocknung, schleifen',
-        includedIn: ['service_tuerfluegel_lackieren', 'service_fensterfluegel_innen', 'service_fensterfluegel_aussen', 'service_malervlies', 'service_mustertapete', 'service_neuanstrich_frisch'],
+        includedIn: ['service_malervlies', 'service_mustertapete', 'service_neuanstrich_frisch'],
         unit: 'm²',
         maxProductivityPerDay: 70,
         standardQuantity: 40,
