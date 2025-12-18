@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 export default function CalculationStepsExplanation({ object, services, quantities, customerApproval, specialNotesData }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
   if (!object || !quantities) return null;
 
   const steps = [];
@@ -185,11 +187,30 @@ export default function CalculationStepsExplanation({ object, services, quantiti
 
   return (
     <div style={{ marginTop: '20px', padding: '15px', background: '#fff3cd', borderRadius: '4px', border: '1px solid #ffc107' }}>
-      <h3 style={{ marginBottom: '15px', color: '#856404' }}>
+      <h3 
+        style={{ 
+          marginBottom: '15px', 
+          color: '#856404',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          userSelect: 'none'
+        }}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <span style={{ 
+          display: 'inline-block',
+          transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+          transition: 'transform 0.2s ease',
+          fontSize: '14px'
+        }}>
+          ▶
+        </span>
         📋 Schritt-für-Schritt Erklärung der Berechnung
       </h3>
       
-      {steps.map((step, idx) => (
+      {isExpanded && steps.map((step, idx) => (
         <div 
           key={idx} 
           style={{ 
@@ -319,17 +340,19 @@ export default function CalculationStepsExplanation({ object, services, quantiti
         </div>
       ))}
       
-      <div style={{ 
-        marginTop: '20px', 
-        padding: '10px', 
-        background: '#d1ecf1', 
-        borderRadius: '4px',
-        fontSize: '13px',
-        color: '#0c5460'
-      }}>
-        <strong>Hinweis:</strong> Die Schritte 11-13 (Wartezeiten, Workflow-Sortierung, Mehrpersonal) 
-        werden im Arbeitsplan berücksichtigt.
-      </div>
+      {isExpanded && (
+        <div style={{ 
+          marginTop: '20px', 
+          padding: '10px', 
+          background: '#d1ecf1', 
+          borderRadius: '4px',
+          fontSize: '13px',
+          color: '#0c5460'
+        }}>
+          <strong>Hinweis:</strong> Die Schritte 11-13 (Wartezeiten, Workflow-Sortierung, Mehrpersonal) 
+          werden im Arbeitsplan berücksichtigt.
+        </div>
+      )}
     </div>
   );
 }

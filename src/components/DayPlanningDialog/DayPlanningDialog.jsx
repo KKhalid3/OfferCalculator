@@ -1,188 +1,13 @@
-import React, { useState, useMemo, useRef } from "react";
-import { MINUTES_PER_DAY, HOURS_PER_DAY } from "../../constants";
-import { workflowPhases } from "../../data/servicesData";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
-
-// Formatiert Zeit in Stunden und Minuten
-const formatTime = (minutes) => {
-  if (!minutes && minutes !== 0) return "0:00 h";
-  const totalMinutes = Math.round(minutes);
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${h}:${m.toString().padStart(2, "0")} h`;
-};
-
-// Formatiert Uhrzeit (für Timeline)
-const formatClock = (minutes) => {
-  const totalMinutes = Math.round(minutes);
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${h}:${m.toString().padStart(2, "0")}`;
-};
-
-// Erkennt den Arbeitsbereich aus dem Service-Namen
-const detectWorkArea = (serviceName) => {
-  const name = serviceName.toLowerCase();
-
-  if (name.includes("decke") || name.includes("decken")) return "decke";
-  if (name.includes("wand") || name.includes("wände")) return "wand";
-  if (name.includes("boden") || name.includes("abdecken")) return "boden";
-  if (name.includes("fenster")) return "fenster";
-  if (name.includes("tür") || name.includes("zarge")) return "tuer";
-  if (
-    name.includes("lackier") ||
-    name.includes("schleifen") ||
-    name.includes("grundier")
-  )
-    return "lackierung";
-  if (
-    name.includes("tapete") ||
-    name.includes("tapezier") ||
-    name.includes("raufaser") ||
-    name.includes("vlies")
-  )
-    return "tapete";
-  if (name.includes("spachtel")) return "spachtel";
-  if (name.includes("grundierung") || name.includes("grundier"))
-    return "grundierung";
-  if (name.includes("streichen") || name.includes("anstrich"))
-    return "anstrich";
-
-  return "allgemein";
-};
-
-// Gibt lesbaren Namen für den Arbeitsbereich zurück
-const getAreaName = (area) => {
-  const names = {
-    decke: "Decke",
-    wand: "Wände",
-    boden: "Boden",
-    fenster: "Fenster",
-    tuer: "Türen/Zargen",
-    lackierung: "Lackierarbeiten",
-    tapete: "Tapezierarbeiten",
-    spachtel: "Spachtelarbeiten",
-    grundierung: "Grundierung",
-    anstrich: "Anstrich",
-    allgemein: "Allgemein",
-  };
-  return names[area] || area;
-};
-
-// Prüft ob zwei Arbeitsbereiche parallel im gleichen Raum möglich sind
-// otherTaskCreatesDust: ob die geplante Arbeit Staub erzeugt (z.B. Schleifen)
-const canWorkParallelInSameRoom = (
-  dryingArea,
-  otherArea,
-  otherTaskCreatesDust = false
-) => {
-  // Regeln für Parallelarbeit im gleichen Raum:
-
-  // Boden trocknet: NICHTS anderes möglich (man muss drauf stehen!)
-  if (dryingArea === "boden") {
-    return {
-      canWork: false,
-      reason: "Boden trocknet – Raum nicht betretbar",
-    };
-  }
-
-  // WICHTIG: Stauberzeugende Arbeiten während Trocknungsphasen verhindern
-  // Staub würde sich in der feuchten Oberfläche festsetzen!
-  if (
-    otherTaskCreatesDust &&
-    [
-      "fenster",
-      "tuer",
-      "lackierung",
-      "anstrich",
-      "wand",
-      "decke",
-      "spachtel",
-      "grundierung",
-    ].includes(dryingArea)
-  ) {
-    return {
-      canWork: false,
-      reason: `🌫️ Stauberzeugende Arbeit nicht möglich – ${getAreaName(
-        dryingArea
-      )} trocknet noch und würde durch Staub verunreinigt`,
-    };
-  }
-
-  // Decke trocknet: Wände, Fenster, Türen können gemacht werden (wenn kein Staub)
-  if (dryingArea === "decke") {
-    if (["wand", "fenster", "tuer", "lackierung"].includes(otherArea)) {
-      return {
-        canWork: true,
-        reason: "Decke trocknet – Wände/Fenster/Türen sind unabhängig",
-      };
-    }
-    if (otherArea === "boden") {
-      return {
-        canWork: true,
-        reason: "Decke trocknet – Bodenarbeiten möglich",
-      };
-    }
-  }
-
-  // Wände trocknen: Fenster, Türen können gemacht werden (sind oft unabhängig)
-  if (dryingArea === "wand") {
-    if (["fenster", "tuer"].includes(otherArea)) {
-      return {
-        canWork: true,
-        reason: "Wände trocknen – Fenster/Türen können bearbeitet werden",
-      };
-    }
-    if (otherArea === "decke") {
-      return {
-        canWork: false,
-        reason:
-          "Wände trocknen – Deckenarbeiten würden Wände beschädigen (Tropfen)",
-      };
-    }
-  }
-
-  // Fenster/Türen trocknen: Andere Flächen können gemacht werden (wenn kein Staub)
-  if (["fenster", "tuer", "lackierung"].includes(dryingArea)) {
-    if (["wand", "decke"].includes(otherArea) && !otherTaskCreatesDust) {
-      return {
-        canWork: true,
-        reason: `${getAreaName(dryingArea)} trocknet – ${getAreaName(
-          otherArea
-        )} kann bearbeitet werden (keine stauberzeugende Arbeit)`,
-      };
-    }
-  }
-
-  // Spachtel/Grundierung trocknet: Gleiche Fläche muss warten
-  if (["spachtel", "grundierung", "tapete", "anstrich"].includes(dryingArea)) {
-    if (otherArea === dryingArea) {
-      return {
-        canWork: false,
-        reason: "Gleiche Oberflächenbehandlung – muss erst trocknen",
-      };
-    }
-  }
-
-  // Standard: Gleicher Bereich = warten
-  if (dryingArea === otherArea) {
-    return {
-      canWork: false,
-      reason: `${getAreaName(
-        dryingArea
-      )} trocknet – gleicher Bereich nicht bearbeitbar`,
-    };
-  }
-
-  // Standard: Andere Bereiche können oft parallel gemacht werden
-  return {
-    canWork: true,
-    reason: `${getAreaName(dryingArea)} trocknet – ${getAreaName(
-      otherArea
-    )} ist unabhängig`,
-  };
-};
+import React, { useState, useRef } from "react";
+import { formatTime, formatClock } from "./utils/timeFormatters";
+import { useDayPlanning } from "./hooks/useDayPlanning";
+import { exportDayPlanningToPDF } from "./services/pdfExportService";
+import {
+  getEmployeesForDay,
+  getRoomsForDay,
+  getEmployeeUtilization,
+} from "./utils/dayPlanningHelpers";
+import TaskTooltip from "./components/TaskTooltip";
 
 export default function DayPlanningDialog({
   results,
@@ -192,390 +17,25 @@ export default function DayPlanningDialog({
   const [isOpen, setIsOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const printContentRef = useRef(null);
+  
+  // State für Custom Tooltip
+  const [hoveredTask, setHoveredTask] = useState(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
 
-  // PDF Export - Optimierte Seitennutzung mit intelligentem Umbruch
+  // Verwende Custom Hook für Planungslogik
+  const detailedPlan = useDayPlanning(results, customerApproval, companySettings);
+
+  // PDF Export
   const handleExportPDF = async (preview = false) => {
     setIsExporting(true);
-
     try {
-      // WICHTIG: Tagesanzahl aus detailedPlan nehmen (tatsächliche Anzahl der geplanten Tage)
-      const totalDaysVal =
-        detailedPlan?.summary?.totalDays ||
-        detailedPlan?.days?.length ||
-        results?.totalDays ||
-        1;
-      const optimalEmployees = results?.optimalEmployees || 1;
-      const totalTimeVal = results?.totalTime || 0;
-      const totalWaitTimeVal = detailedPlan.summary.totalWaitTime || 0;
-      const date = new Date();
-      const dateStr = `${String(date.getDate()).padStart(2, "0")}.${String(
-        date.getMonth() + 1
-      ).padStart(2, "0")}.${date.getFullYear()}`;
-
-      // Temporärer Container für PDF-Rendering
-      const printContainer = document.createElement("div");
-      printContainer.style.cssText = `
-        position: absolute;
-        left: -9999px;
-        top: 0;
-        width: 750px;
-        background: white;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      `;
-      document.body.appendChild(printContainer);
-
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
+      await exportDayPlanningToPDF({
+        detailedPlan,
+        results,
+        companySettings,
+        customerApproval,
+        preview,
       });
-
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 8;
-      const usableWidth = pageWidth - margin * 2;
-      const usableHeight = pageHeight - margin * 2 - 8; // 8mm für Footer
-      const pxToMm = usableWidth / 750; // Umrechnungsfaktor
-
-      let currentY = margin;
-      let isFirstElement = true;
-
-      // Hilfsfunktion: Element rendern und Höhe in mm zurückgeben
-      const renderSection = async (htmlContent) => {
-        printContainer.innerHTML = htmlContent;
-        await new Promise((resolve) => setTimeout(resolve, 30));
-
-        const canvas = await html2canvas(printContainer, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: "#ffffff",
-          width: 750,
-          windowWidth: 750,
-        });
-
-        const imgData = canvas.toDataURL("image/png");
-        const imgHeightMm = (canvas.height / 2) * pxToMm; // /2 wegen scale:2
-
-        return { imgData, imgHeightMm, imgWidth: usableWidth };
-      };
-
-      // Hilfsfunktion: Abschnitt zur PDF hinzufügen
-      const addToPdf = async (htmlContent) => {
-        const { imgData, imgHeightMm, imgWidth } = await renderSection(
-          htmlContent
-        );
-
-        // Prüfen ob Platz auf aktueller Seite
-        if (!isFirstElement && currentY + imgHeightMm > usableHeight + margin) {
-          pdf.addPage();
-          currentY = margin;
-        }
-
-        pdf.addImage(imgData, "PNG", margin, currentY, imgWidth, imgHeightMm);
-        currentY += imgHeightMm + 2; // 2mm Abstand zwischen Abschnitten
-        isFirstElement = false;
-      };
-
-      // === Header + Zusammenfassung + Mitarbeiter-Kalkulation ===
-      const headerHtml = `
-        <div style="padding: 15px; color: #333; font-size: 11px; line-height: 1.4;">
-          <div style="border-bottom: 2px solid #1976d2; padding-bottom: 10px; margin-bottom: 12px;">
-            ${
-              companySettings?.companyName
-                ? `<div style="color: #666; font-size: 10px; margin-bottom: 3px;">${companySettings.companyName}</div>`
-                : ""
-            }
-            <h1 style="margin: 0; font-size: 20px; font-weight: 600; color: #1a1a1a;">Detaillierter Ablaufplan</h1>
-            <div style="color: #666; font-size: 10px; margin-top: 4px;">Erstellt am ${dateStr}</div>
-          </div>
-          <div style="display: flex; margin-bottom: 12px; padding: 12px; background: #f5f5f5; border-radius: 6px;">
-            <div style="flex: 1; text-align: center;">
-              <div style="font-size: 24px; font-weight: 700; color: #1976d2;">${totalDaysVal}</div>
-              <div style="font-size: 9px; color: #666;">Arbeitstag${
-                totalDaysVal !== 1 ? "e" : ""
-              }</div>
-            </div>
-            <div style="flex: 1; text-align: center; border-left: 1px solid #ddd;">
-              <div style="font-size: 24px; font-weight: 700; color: #1976d2;">${optimalEmployees}</div>
-              <div style="font-size: 9px; color: #666;">Mitarbeiter</div>
-            </div>
-            <div style="flex: 1; text-align: center; border-left: 1px solid #ddd;">
-              <div style="font-size: 24px; font-weight: 700; color: #1976d2;">${formatTime(
-                totalTimeVal
-              )}</div>
-              <div style="font-size: 9px; color: #666;">Arbeitszeit</div>
-            </div>
-            ${
-              totalWaitTimeVal > 0
-                ? `
-            <div style="flex: 1; text-align: center; border-left: 1px solid #ddd;">
-              <div style="font-size: 24px; font-weight: 700; color: #e65100;">${formatTime(
-                totalWaitTimeVal
-              )}</div>
-              <div style="font-size: 9px; color: #666;">Trocknungszeit</div>
-            </div>
-            `
-                : ""
-            }
-          </div>
-          ${
-            detailedPlan.summary.employeeExplanation?.length > 0
-              ? `
-          <div style="padding: 10px 12px; background: #fff; border: 1px solid #e0e0e0; border-radius: 6px;">
-            <div style="font-size: 11px; font-weight: 600; color: #333; margin-bottom: 8px;">Mitarbeiter-Kalkulation</div>
-            ${detailedPlan.summary.employeeExplanation
-              .map(
-                (exp) => `
-              <div style="font-size: 9px; color: ${
-                exp.type === "warning"
-                  ? "#e65100"
-                  : exp.type === "tip" || exp.type === "parallel"
-                  ? "#2e7d32"
-                  : "#555"
-              }; margin-bottom: 4px; padding-left: 8px; border-left: 2px solid ${
-                  exp.type === "warning"
-                    ? "#e65100"
-                    : exp.type === "tip" || exp.type === "parallel"
-                    ? "#2e7d32"
-                    : "#ccc"
-                };">
-                ${exp.text}
-              </div>
-            `
-              )
-              .join("")}
-          </div>
-          `
-              : ""
-          }
-        </div>
-      `;
-
-      await addToPdf(headerHtml);
-
-      // === JEDER TAG - passt sich an verfügbaren Platz an ===
-      for (const day of detailedPlan.days) {
-        const dayHtml = `
-          <div style="padding: 12px 15px; color: #333; font-size: 10px; line-height: 1.3;">
-            <div style="background: #1976d2; color: white; padding: 8px 12px; border-radius: 5px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-              <div style="font-size: 14px; font-weight: 600;">Tag ${
-                day.dayNumber
-              }</div>
-              <div style="font-size: 11px;">
-                Arbeit: <strong>${formatTime(day.totalWorkTime)}</strong>
-                ${
-                  day.totalWaitTime > 0
-                    ? `<span style="margin-left: 15px; color: #ffcc80;">Trocknung: <strong>${formatTime(
-                        day.totalWaitTime
-                      )}</strong></span>`
-                    : ""
-                }
-              </div>
-            </div>
-            <table style="width: 100%; border-collapse: collapse; font-size: 9px;">
-              <thead>
-                <tr style="background: #f0f0f0;">
-                  <th style="text-align: left; padding: 6px; font-weight: 600; color: #555; width: 25px; border-bottom: 1px solid #ddd;">#</th>
-                  <th style="text-align: left; padding: 6px; font-weight: 600; color: #555; border-bottom: 1px solid #ddd;">Aufgabe</th>
-                  <th style="text-align: left; padding: 6px; font-weight: 600; color: #555; width: 90px; border-bottom: 1px solid #ddd;">Objekt</th>
-                  <th style="text-align: center; padding: 6px; font-weight: 600; color: #555; width: 60px; border-bottom: 1px solid #ddd;">Menge</th>
-                  <th style="text-align: right; padding: 6px; font-weight: 600; color: #555; width: 50px; border-bottom: 1px solid #ddd;">Zeit</th>
-                  <th style="text-align: right; padding: 6px; font-weight: 600; color: #555; width: 60px; border-bottom: 1px solid #ddd;">Trock.</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${day.tasks
-                  .map(
-                    (task, idx) => `
-                  <tr style="background: ${
-                    idx % 2 === 0 ? "#fafafa" : "#fff"
-                  }; border-bottom: 1px solid #eee;">
-                    <td style="padding: 5px 6px; color: #888; font-size: 8px; vertical-align: top;">${
-                      idx + 1
-                    }</td>
-                    <td style="padding: 5px 6px; vertical-align: top;">
-                      <div style="font-weight: 500; color: #222; font-size: 9px;">${
-                        task.serviceName
-                      }${
-                      task.employeeId
-                        ? ` <span style="background: ${
-                            task.employeeId === 1
-                              ? "#1976d2"
-                              : task.employeeId === 2
-                              ? "#388e3c"
-                              : "#7b1fa2"
-                          }; color: white; padding: 1px 4px; border-radius: 2px; font-size: 7px; margin-left: 4px;">MA ${
-                            task.employeeId
-                          }</span>`
-                        : ""
-                    }</div>
-                      ${
-                        task.workflowPhaseName
-                          ? `<div style="font-size: 8px; color: #888; margin-top: 1px;">${task.workflowPhaseName}</div>`
-                          : ""
-                      }
-                      ${
-                        task.workflowExplanation
-                          ? `<div style="font-size: 8px; color: #666; margin-top: 2px; padding: 3px 5px; background: #f5f5f5; border-radius: 3px;">${task.workflowExplanation}</div>`
-                          : ""
-                      }
-                      ${
-                        task.workflowTip
-                          ? `<div style="font-size: 8px; color: #e65100; margin-top: 2px; padding: 3px 5px; background: #fff8e1; border-radius: 3px;">💡 ${task.workflowTip}</div>`
-                          : ""
-                      }
-                    </td>
-                    <td style="padding: 5px 6px; color: #555; vertical-align: top; font-size: 8px;">${
-                      task.objectName
-                    }</td>
-                    <td style="padding: 5px 6px; color: #555; text-align: center; vertical-align: top; font-size: 8px;">${
-                      task.quantity?.toFixed(1) || "-"
-                    } ${task.unit || ""}</td>
-                    <td style="padding: 5px 6px; font-weight: 600; text-align: right; vertical-align: top; font-size: 9px;">${formatTime(
-                      task.workTime
-                    )}</td>
-                    <td style="padding: 5px 6px; color: #e65100; font-weight: 600; text-align: right; vertical-align: top; font-size: 9px;">${
-                      task.waitTime > 0 ? `+${formatTime(task.waitTime)}` : "-"
-                    }</td>
-                  </tr>
-                `
-                  )
-                  .join("")}
-              </tbody>
-            </table>
-            ${
-              day.dryingPhases.filter((p) => p.dryingTime > 0).length > 0
-                ? `
-            <div style="margin-top: 10px; padding: 8px 10px; background: #fff3e0; border-radius: 5px; border-left: 3px solid #e65100;">
-              <div style="font-size: 10px; font-weight: 600; color: #e65100; margin-bottom: 6px;">⏱ Trocknungsphasen</div>
-              ${day.dryingPhases
-                .filter((p) => p.dryingTime > 0)
-                .map(
-                  (phase) => `
-                <div style="margin-bottom: 6px; font-size: 8px;">
-                  <div style="color: #333; font-weight: 500;">Nach "${
-                    phase.afterTask
-                  }": ${formatTime(phase.dryingTime)}</div>
-                  ${
-                    phase.sameRoomCanDo?.length > 0
-                      ? `<div style="color: #2e7d32; margin-top: 2px; margin-left: 8px;">✓ Möglich: ${phase.sameRoomCanDo
-                          .slice(0, 2)
-                          .map((i) => i.task)
-                          .join(", ")}${
-                          phase.sameRoomCanDo.length > 2
-                            ? ` (+${phase.sameRoomCanDo.length - 2})`
-                            : ""
-                        }</div>`
-                      : ""
-                  }
-                  ${
-                    customerApproval && phase.otherRoomCanDo?.length > 0
-                      ? `<div style="color: #1976d2; margin-top: 2px; margin-left: 8px;">✓ Andere Räume: ${phase.otherRoomCanDo
-                          .slice(0, 2)
-                          .map((i) => i.task)
-                          .join(", ")}${
-                          phase.otherRoomCanDo.length > 2
-                            ? ` (+${phase.otherRoomCanDo.length - 2})`
-                            : ""
-                        }</div>`
-                      : ""
-                  }
-                </div>
-              `
-                )
-                .join("")}
-            </div>
-            `
-                : ""
-            }
-          </div>
-        `;
-
-        await addToPdf(dayHtml);
-      }
-
-      // === Legende - kompakt am Ende ===
-      const legendHtml = `
-        <div style="padding: 10px 15px; color: #333; font-size: 9px; line-height: 1.3;">
-          <div style="padding: 10px 12px; background: #f5f5f5; border-radius: 5px;">
-            <div style="font-size: 10px; font-weight: 600; color: #333; margin-bottom: 8px;">Legende</div>
-            <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 8px;">
-              <div style="display: flex; align-items: center; gap: 5px;">
-                <span style="width: 10px; height: 10px; background: #4CAF50; border-radius: 2px; display: inline-block;"></span>
-                <span>Arbeitszeit</span>
-              </div>
-              <div style="display: flex; align-items: center; gap: 5px;">
-                <span style="width: 10px; height: 10px; background: #9C27B0; border-radius: 2px; display: inline-block;"></span>
-                <span>Unterleistung</span>
-              </div>
-              <div style="display: flex; align-items: center; gap: 5px;">
-                <span style="width: 10px; height: 10px; background: #FF9800; border-radius: 2px; display: inline-block;"></span>
-                <span>Sonderangabe</span>
-              </div>
-              <div style="display: flex; align-items: center; gap: 5px;">
-                <span style="width: 10px; height: 10px; background: #e65100; border-radius: 50%; display: inline-block;"></span>
-                <span>Trocknung</span>
-              </div>
-            </div>
-            <div style="font-size: 9px; font-weight: 500; color: #555; margin-bottom: 5px;">Parallelarbeit:</div>
-            <div style="display: flex; flex-wrap: wrap; gap: 12px;">
-              <div style="display: flex; align-items: center; gap: 5px;">
-                <span style="width: 10px; height: 10px; border: 2px solid #4CAF50; border-radius: 2px; display: inline-block;"></span>
-                <span>Gleicher Raum OK</span>
-              </div>
-              <div style="display: flex; align-items: center; gap: 5px;">
-                <span style="width: 10px; height: 10px; border: 2px solid #f44336; border-radius: 2px; display: inline-block;"></span>
-                <span>Nicht möglich</span>
-              </div>
-              <div style="display: flex; align-items: center; gap: 5px;">
-                <span style="width: 10px; height: 10px; border: 2px solid #2196F3; border-radius: 2px; display: inline-block;"></span>
-                <span>Anderer Raum</span>
-              </div>
-            </div>
-          </div>
-          <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; font-size: 8px; color: #888; text-align: center;">
-            ${
-              companySettings?.companyName
-                ? `${companySettings.companyName} | `
-                : ""
-            }Erstellt am ${dateStr}
-          </div>
-        </div>
-      `;
-
-      await addToPdf(legendHtml);
-
-      // Seitenzahlen hinzufügen
-      const totalPages = pdf.internal.getNumberOfPages();
-      for (let i = 1; i <= totalPages; i++) {
-        pdf.setPage(i);
-        pdf.setFontSize(9);
-        pdf.setTextColor(150, 150, 150);
-        pdf.text(
-          `Seite ${i} von ${totalPages}`,
-          pageWidth / 2,
-          pageHeight - 8,
-          { align: "center" }
-        );
-      }
-
-      // Cleanup
-      document.body.removeChild(printContainer);
-
-      // Dateiname mit Datum
-      const fileDate = `${date.getFullYear()}-${String(
-        date.getMonth() + 1
-      ).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-      const fileName = `Ablaufplan_${fileDate}.pdf`;
-
-      if (preview) {
-        const pdfBlob = pdf.output("blob");
-        const pdfUrl = URL.createObjectURL(pdfBlob);
-        window.open(pdfUrl, "_blank");
-      } else {
-        pdf.save(fileName);
-      }
     } catch (error) {
       console.error("PDF Export fehlgeschlagen:", error);
       alert("PDF Export fehlgeschlagen. Bitte versuchen Sie es erneut.");
@@ -584,1411 +44,70 @@ export default function DayPlanningDialog({
     }
   };
 
-  // =====================================================
-  // SCHRITT 1: HILFSFUNKTIONEN FÜR RAUM-BASIERTE VISUALISIERUNG
-  // =====================================================
-
-  /**
-   * Extrahiert Mitarbeiter-Daten aus Tasks
-   *
-   * Diese Funktion gruppiert Tasks nach Mitarbeitern für die Timeline-Visualisierung.
-   * Jeder Mitarbeiter bekommt eine eigene Zeile mit allen seinen Tasks.
-   *
-   * @param {Object} day - Tag-Objekt mit tasks
-   * @returns {Array} Array von Mitarbeiter-Objekten mit tasks, totalTime und maxTime
-   */
-  const getEmployeesForDay = (day) => {
-    const employeeMap = {};
-    const maxOvertimePercent = companySettings?.maxOvertimePercent ?? 15;
-    const maxDayMinutes = Math.round(
-      MINUTES_PER_DAY * (1 + maxOvertimePercent / 100)
-    );
-
-    // Gruppiere Tasks nach Mitarbeiter
-    day.tasks?.forEach((task) => {
-      // Wenn kein employeeId vorhanden, verwende "unassigned"
-      const empId = task.employeeId || "unassigned";
-      const empName =
-        task.employeeName ||
-        (empId === "unassigned" ? "Nicht zugewiesen" : `MA ${empId}`);
-
-      if (!employeeMap[empId]) {
-        employeeMap[empId] = {
-          employeeId: empId,
-          employeeName: empName,
-          tasks: [],
-          totalTime: 0,
-          maxTime: 0, // Maximale Zeit für Timeline (inkl. Überstunden)
-        };
-      }
-
-      employeeMap[empId].tasks.push(task);
-      // WICHTIG: duration ist in Minuten (von workflowService)
-      const taskDuration = task.duration || task.scheduledTime || 0;
-      employeeMap[empId].totalTime += taskDuration;
-
-      // Berechne maximale Zeit für Timeline (Ende des letzten Tasks + Trocknungszeit)
-      const taskEndTime = (task.startTime || 0) + taskDuration;
-      const waitTime = task.waitTime || 0;
-      const totalEndTime = taskEndTime + waitTime; // Ende inkl. Trocknungszeit
-      if (totalEndTime > employeeMap[empId].maxTime) {
-        employeeMap[empId].maxTime = totalEndTime;
-      }
-    });
-
-    // Sortiere Tasks nach startTime für jeden Mitarbeiter
-    const employees = Object.values(employeeMap).map((emp) => {
-      const sortedTasks = emp.tasks.sort(
-        (a, b) => (a.startTime || 0) - (b.startTime || 0)
-      );
-
-      // Berechne maximale Zeit für Timeline: Ende des letzten Tasks
-      // Stelle sicher, dass maxTime mindestens MINUTES_PER_DAY ist
-      // WICHTIG: Begrenze NICHT auf maxDayMinutes, damit alle Tasks sichtbar sind
-      const actualMaxTime = Math.max(emp.maxTime, MINUTES_PER_DAY);
-
-      return {
-        ...emp,
-        tasks: sortedTasks,
-        maxTime: actualMaxTime, // Maximale Zeit für Timeline-Skalierung (kann über 8h sein)
-      };
-    });
-
-    // Sortiere Mitarbeiter nach ID (unassigned zuletzt)
-    return employees.sort((a, b) => {
-      if (a.employeeId === "unassigned") return 1;
-      if (b.employeeId === "unassigned") return -1;
-      return a.employeeId - b.employeeId;
-    });
+  // Wrapper-Funktionen für Helper-Funktionen (mit companySettings)
+  const getEmployeesForDayWrapper = (day) => {
+    return getEmployeesForDay(day, companySettings);
   };
 
-  /**
-   * Extrahiert Raum-Daten aus der neuen tasksByRoom Struktur
-   *
-   * Diese Funktion nutzt die neue Datenstruktur aus workflowService:
-   * - tasksByRoom: Gruppiert Tasks nach Räumen für parallele Visualisierung
-   * - Falls nicht verfügbar: Fallback auf manuelle Gruppierung nach objectId
-   *
-   * @param {Object} day - Tag-Objekt mit tasks oder tasksByRoom
-   * @returns {Array} Array von Raum-Objekten mit tasks und totalTime
-   */
-  const getRoomsForDay = (day) => {
-    // NEU: Nutze tasksByRoom wenn verfügbar (von workflowService)
-    if (day.tasksByRoom && Object.keys(day.tasksByRoom).length > 0) {
-      return Object.entries(day.tasksByRoom).map(([roomId, tasks]) => {
-        // Finde Raum-Name aus dem ersten Task
-        const firstTask = tasks[0];
-        return {
-          roomId,
-          roomName: firstTask?.objectName || `Raum ${roomId}`,
-          tasks: tasks,
-          // WICHTIG: duration ist in Minuten (von workflowService)
-          totalTime: tasks.reduce((sum, t) => sum + (t.duration || 0), 0),
-        };
-      });
-    }
-
-    // FALLBACK: Gruppiere Tasks manuell nach objectId
-    const tasksByRoom = {};
-    day.tasks?.forEach((task) => {
-      const roomId = task.objectId || "unknown";
-      if (!tasksByRoom[roomId]) {
-        tasksByRoom[roomId] = [];
-      }
-      tasksByRoom[roomId].push(task);
-    });
-
-    return Object.entries(tasksByRoom).map(([roomId, tasks]) => {
-      const firstTask = tasks[0];
-      return {
-        roomId,
-        roomName: firstTask?.objectName || `Raum ${roomId}`,
-        tasks: tasks,
-        // WICHTIG: duration ist in Minuten (von workflowService)
-        totalTime: tasks.reduce((sum, t) => sum + (t.duration || 0), 0),
-      };
-    });
+  const getEmployeeUtilizationWrapper = (day) => {
+    return getEmployeeUtilization(day, companySettings);
   };
 
-  /**
-   * Berechnet Mitarbeiter-Auslastung für einen Tag
-   *
-   * Nutzt die neue employeeUtilization Struktur aus workflowService:
-   * - employeeUtilization: Bereits berechnete Auslastung pro Mitarbeiter
-   * - Falls nicht verfügbar: Berechnet manuell aus Tasks
-   *
-   * @param {Object} day - Tag-Objekt mit tasks oder employeeUtilization
-   * @returns {Array} Array von Mitarbeiter-Objekten mit minutes, hours, utilizationPercent
-   */
-  const getEmployeeUtilization = (day) => {
-    // NEU: Nutze employeeUtilization wenn verfügbar (von workflowService oder lokaler Planung)
-    if (day.employeeUtilization && day.employeeUtilization.length > 0) {
-      return day.employeeUtilization;
-    }
+  // Helper-Funktion für Task-Farben (global verfügbar für Tooltip)
+  const getTaskColor = (task) => {
+    // Verwende eindeutige Task-ID für konsistente Farbzuweisung
+    const uniqueId =
+      task.id ||
+      `${task.serviceId || task.serviceName}-${
+        task.objectId || "unknown"
+      }`;
 
-    // FALLBACK: Berechne manuell aus Tasks
-    const employeeMap = {};
-    day.tasks?.forEach((task) => {
-      if (task.employeeId) {
-        if (!employeeMap[task.employeeId]) {
-          employeeMap[task.employeeId] = {
-            employeeId: task.employeeId,
-            employeeName: task.employeeName || `MA ${task.employeeId}`,
-            minutes: 0,
-            tasks: [],
-          };
-        }
-        // WICHTIG: duration hat Priorität (von workflowService oder lokaler Planung)
-        // scheduledTime ist Fallback für alte Datenstruktur
-        const taskDuration = task.duration || task.scheduledTime || 0;
-        employeeMap[task.employeeId].minutes += taskDuration;
-        employeeMap[task.employeeId].tasks.push(task);
-      }
-    });
+    // Spezielle Farben für Projekt-Tasks
+    if (task.objectId === "project")
+      return "#607D8B"; // Grau für Baustelle
+    if (task.objectId === "project-end")
+      return "#9E9E9E"; // Grau für Räumung
 
-    const minHoursPerEmployee = companySettings?.minHoursPerEmployee || 6;
+    // Generiere Hash aus eindeutiger ID
+    const hash = uniqueId
+      .split("")
+      .reduce((acc, char) => {
+        return (
+          char.charCodeAt(0) + ((acc << 5) - acc)
+        );
+      }, 0);
 
-    return Object.values(employeeMap).map((emp) => ({
-      ...emp,
-      hours: emp.minutes / 60,
-      utilizationPercent: (emp.minutes / MINUTES_PER_DAY) * 100,
-      meetsMinimum:
-        emp.minutes / 60 >= minHoursPerEmployee || emp.minutes === 0,
-    }));
+    // Erweiterte Farbpalette für bessere Unterscheidung
+    const colors = [
+      "#1976d2", // Blau
+      "#388e3c", // Grün
+      "#7b1fa2", // Lila
+      "#ff9800", // Orange
+      "#00796b", // Teal
+      "#d32f2f", // Rot
+      "#c2185b", // Pink
+      "#512da8", // Dunkel-Lila
+      "#0288d1", // Hellblau
+      "#689f38", // Hellgrün
+      "#f57c00", // Dunkelorange
+      "#5d4037", // Braun
+      "#455a64", // Blaugrau
+      "#7b1fa2", // Violett
+      "#c2185b", // Magenta
+      "#303f9f", // Indigo
+      "#00796b", // Türkis
+      "#e64a19", // Rotorange
+      "#5e35b1", // Tiefviolett
+      "#00897b", // Mint
+      "#d84315", // Tiefrot
+      "#6a1b9a", // Purpur
+      "#0277bd", // Azurblau
+      "#2e7d32", // Waldgrün
+      "#e91e63", // Pink
+      "#795548", // Kaffeebraun
+    ];
+    return colors[Math.abs(hash) % colors.length];
   };
-
-  // =====================================================
-  // INTELLIGENTE TAGESPLANUNG - Optimale Tagesfüllung
-  // Mit Überstunden-Toleranz und intelligenter Task-Aufteilung
-  // =====================================================
-  const detailedPlan = useMemo(() => {
-    if (!results?.objects) return { days: [], summary: {} };
-
-    const dailyMinutes = MINUTES_PER_DAY;
-
-    // Überstunden-Einstellungen aus companySettings
-    const maxOvertimePercent = companySettings?.maxOvertimePercent ?? 15;
-    const minTaskSplitTime = companySettings?.minTaskSplitTime ?? 60;
-
-    // Maximale Tageszeit inkl. Überstunden
-    const maxDayMinutes = Math.round(
-      dailyMinutes * (1 + maxOvertimePercent / 100)
-    );
-
-    // Schritt 1: Alle Tasks sammeln mit Details
-    const taskPool = [];
-    const tasksByObject = {};
-
-    // ========================================
-    // BAUSTELLENEINRICHTUNG als ersten Task hinzufügen
-    // ========================================
-    if (companySettings?.siteSetup && companySettings.siteSetup > 0) {
-      const setupTask = {
-        id: "site-setup",
-        objectId: "project",
-        objectName: "Baustelle",
-        objectType: "Projekt",
-        serviceName: "Baustelleneinrichtung",
-        totalTime: companySettings.siteSetup,
-        remainingTime: companySettings.siteSetup,
-        waitTime: 0,
-        isSubService: false,
-        isFromSpecialNote: false,
-        quantity: 1,
-        unit: "pauschal",
-        workArea: "setup",
-        workAreaName: "Einrichtung",
-        workflowOrder: 0, // Allererster Task
-        workflowPhase: "start",
-        workflowPhaseName: "Start",
-        workflowPhaseIcon: "🚀",
-        workflowPhaseColor: "#607D8B",
-        workflowExplanation:
-          "Baustelle einrichten, Material bereitstellen, Wege sichern",
-        createsDust: false,
-        scheduled: false,
-        isProjectTask: true, // Markierung für Projekt-weite Tasks
-      };
-      taskPool.push(setupTask);
-      tasksByObject["project"] = [setupTask];
-    }
-
-    // Objekt-spezifische Tasks sammeln
-    // WICHTIG: Alle Services verarbeiten, inkl. Unterleistungen (isSubService === true)
-    results.objects.forEach((obj) => {
-      tasksByObject[obj.id] = [];
-      obj.services?.forEach((svc) => {
-        // WICHTIG: Alle Services verarbeiten, auch Unterleistungen
-        // Nur Services mit bundleCalculation === true werden übersprungen (sind bereits im Hauptservice enthalten)
-        const workArea = detectWorkArea(svc.serviceName);
-        const phase =
-          workflowPhases[svc.workflowPhase] || workflowPhases.beschichtung;
-
-        // Service-Name mit gebündelten Unterleistungen
-        let displayName = svc.serviceName;
-        if (svc.hasBundledServices && svc.bundledServices?.length > 0) {
-          const bundledNames = svc.bundledServices
-            .map((b) => b.title)
-            .join(", ");
-          displayName = `${svc.serviceName} (inkl. ${bundledNames})`;
-        }
-
-        const task = {
-          // WICHTIG: Verwende serviceId für eindeutige ID, damit Unterleistungen nicht überschrieben werden
-          id: `${obj.id}-${svc.serviceId || svc.serviceName}`,
-          serviceId: svc.serviceId, // NEU: Service-ID für eindeutige Identifikation
-          objectId: obj.id,
-          objectName: obj.name,
-          objectType: obj.type,
-          serviceName: displayName,
-          originalServiceName: svc.serviceName,
-          totalTime: Math.round(svc.finalTime),
-          remainingTime: Math.round(svc.finalTime),
-          waitTime: Math.round(svc.waitTime || 0),
-          isSubService: svc.isSubService,
-          isFromSpecialNote: svc.isFromSpecialNote,
-          quantity: svc.quantity,
-          unit: svc.unit,
-          parentServiceName: svc.parentServiceName,
-          workArea: workArea,
-          workAreaName: getAreaName(workArea),
-          workflowOrder: svc.workflowOrder || 20,
-          workflowPhase: svc.workflowPhase || "beschichtung",
-          workflowPhaseName: phase?.name || "Beschichtung",
-          workflowPhaseIcon: phase?.icon || "📋",
-          workflowPhaseColor: phase?.color || "#2196F3",
-          workflowExplanation: svc.workflowExplanation || null,
-          createsDust: svc.createsDust || false,
-          scheduled: false,
-          isProjectTask: false,
-          // NEU: Gebündelte Unterleistungen Info
-          hasBundledServices: svc.hasBundledServices || false,
-          bundledServices: svc.bundledServices || null,
-          bundledTimeAdded: svc.bundledTimeAdded || null,
-        };
-
-        taskPool.push(task);
-        tasksByObject[obj.id].push(task);
-      });
-    });
-
-    // DEBUG: Logge alle Tasks zur Überprüfung
-    console.log(
-      `📋 DayPlanningDialog: ${taskPool.length} Tasks geladen (inkl. ${
-        taskPool.filter((t) => t.isSubService).length
-      } Unterleistungen)`
-    );
-    taskPool.forEach((task, idx) => {
-      if (task.isSubService) {
-        console.log(
-          `   ${idx + 1}. [UNTERLEISTUNG] ${task.serviceName} (${
-            task.objectName
-          }) - ${formatTime(task.totalTime)}`
-        );
-      }
-    });
-
-    // ========================================
-    // BAUSTELLENRÄUMUNG als letzten Task hinzufügen
-    // ========================================
-    if (companySettings?.siteClearance && companySettings.siteClearance > 0) {
-      const clearanceTask = {
-        id: "site-clearance",
-        objectId: "project-end",
-        objectName: "Baustelle",
-        objectType: "Projekt",
-        serviceName: "Baustellenräumung / Entsorgung",
-        totalTime: companySettings.siteClearance,
-        remainingTime: companySettings.siteClearance,
-        waitTime: 0,
-        isSubService: false,
-        isFromSpecialNote: false,
-        quantity: 1,
-        unit: "pauschal",
-        workArea: "cleanup",
-        workAreaName: "Räumung",
-        workflowOrder: 999, // Allerletzter Task
-        workflowPhase: "finish",
-        workflowPhaseName: "Finish",
-        workflowPhaseIcon: "🧹",
-        workflowPhaseColor: "#9E9E9E",
-        workflowExplanation:
-          "Abdeckungen entfernen, Abfälle entsorgen, Baustelle reinigen",
-        createsDust: false,
-        scheduled: false,
-        isProjectTask: true,
-      };
-      taskPool.push(clearanceTask);
-      tasksByObject["project-end"] = [clearanceTask];
-    }
-
-    // Sortiere Tasks innerhalb jedes Objekts nach workflowOrder
-    const objectIds = Object.keys(tasksByObject);
-    for (const objectId of objectIds) {
-      tasksByObject[objectId].sort((a, b) => a.workflowOrder - b.workflowOrder);
-    }
-
-    // Schritt 2: Intelligente Tagesplanung
-    const days = [];
-    let currentDay = {
-      dayNumber: 1,
-      tasks: [],
-      totalWorkTime: 0,
-      totalWaitTime: 0,
-      dryingPhases: [],
-      utilization: 0, // Auslastung in %
-      hasOvertime: false,
-      overtimeMinutes: 0,
-    };
-
-    let timeInDay = 0;
-    let activeDryingPhases = []; // [{objectId, area, endsAt, serviceName}]
-    let currentObjectIndex = 0;
-
-    // === NEU: MEHRPERSONAL-PLANUNG ===
-    const optimalEmployees = results?.optimalEmployees || 1;
-    const employeeColors = {
-      1: "#1976d2", // Blau
-      2: "#388e3c", // Grün
-      3: "#7b1fa2", // Lila
-      4: "#ff9800", // Orange
-      5: "#00796b", // Teal
-    };
-
-    // Mitarbeiter-Zeitslots für den aktuellen Tag
-    const employeeSchedules = [];
-    for (let i = 0; i < optimalEmployees; i++) {
-      employeeSchedules.push({
-        id: i + 1,
-        name: `MA ${i + 1}`,
-        currentDayMinutes: 0,
-        currentObjectId: null,
-      });
-    }
-
-    // NEU: Finde alle verfügbaren Mitarbeiter (sortiert nach Priorität)
-    // PRIORITÄT 1: Mitarbeiter unter minHoursPerEmployee zuerst
-    // PRIORITÄT 2: Weniger gearbeitet = höhere Priorität
-    const getAllAvailableEmployees = () => {
-      const minHoursPerEmployee = companySettings?.minHoursPerEmployee || 6;
-      const minMinutesPerEmployee = minHoursPerEmployee * 60;
-
-      const available = employeeSchedules
-        .filter((e) => e.currentDayMinutes < maxDayMinutes)
-        .sort((a, b) => {
-          // PRIORITÄT 1: Mitarbeiter unter minHoursPerEmployee zuerst
-          const aUnderMin = a.currentDayMinutes < minMinutesPerEmployee;
-          const bUnderMin = b.currentDayMinutes < minMinutesPerEmployee;
-
-          if (aUnderMin && !bUnderMin) return -1;
-          if (!aUnderMin && bUnderMin) return 1;
-
-          // PRIORITÄT 2: Weniger gearbeitet = höhere Priorität
-          return a.currentDayMinutes - b.currentDayMinutes;
-        });
-
-      return available;
-    };
-
-    // Funktion: Finde den am wenigsten ausgelasteten Mitarbeiter
-    const getAvailableEmployee = () => {
-      const available = getAllAvailableEmployees();
-      return available.length > 0 ? available[0] : employeeSchedules[0];
-    };
-
-    // Aktueller Mitarbeiter-Index (für Round-Robin bei gleicher Last)
-    let currentEmployeeIndex = 0;
-
-    // Hilfsfunktion: Prüft ob Arbeit während Trocknungsphase möglich ist
-    // otherTaskCreatesDust: ob die geplante Arbeit Staub erzeugt
-    const canWorkDuringDrying = (
-      dryingArea,
-      otherArea,
-      sameRoom,
-      otherTaskCreatesDust = false
-    ) => {
-      if (dryingArea === "boden" && sameRoom) {
-        return {
-          canWork: false,
-          reason: "Boden trocknet – Raum nicht betretbar",
-        };
-      }
-      if (!sameRoom) {
-        return { canWork: true, reason: "Anderer Raum – unabhängig" };
-      }
-
-      // WICHTIG: Stauberzeugende Arbeiten während Trocknungsphasen im gleichen Raum verhindern
-      // Staub würde sich in der feuchten Oberfläche festsetzen!
-      if (
-        otherTaskCreatesDust &&
-        sameRoom &&
-        [
-          "fenster",
-          "tuer",
-          "lackierung",
-          "anstrich",
-          "wand",
-          "decke",
-          "spachtel",
-          "grundierung",
-        ].includes(dryingArea)
-      ) {
-        return {
-          canWork: false,
-          reason: `🌫️ Stauberzeugende Arbeit nicht möglich – ${dryingArea} trocknet noch`,
-        };
-      }
-
-      if (dryingArea === "decke" && sameRoom) {
-        if (
-          ["wand", "fenster", "tuer", "lackierung", "boden"].includes(otherArea)
-        ) {
-          return {
-            canWork: true,
-            reason: "Decke trocknet – andere Bereiche unabhängig",
-          };
-        }
-      }
-      if (dryingArea === "wand" && sameRoom) {
-        if (["fenster", "tuer"].includes(otherArea)) {
-          return {
-            canWork: true,
-            reason: "Wände trocknen – Fenster/Türen möglich",
-          };
-        }
-        if (otherArea === "decke") {
-          return {
-            canWork: false,
-            reason: "Wände trocknen – Decke würde Wände beschädigen",
-          };
-        }
-      }
-      if (["fenster", "tuer", "lackierung"].includes(dryingArea) && sameRoom) {
-        if (["wand", "decke"].includes(otherArea) && !otherTaskCreatesDust) {
-          return {
-            canWork: true,
-            reason:
-              "Türen/Fenster trocknen – nicht-stauberzeugende Arbeiten möglich",
-          };
-        }
-      }
-
-      // WICHTIG: Spachtelung trocknet - Im gleichen Raum KEINE weiteren Arbeiten möglich
-      // Wenn Decken und Wände gespachtelt wurden, können während der Trocknungszeit
-      // im gleichen Raum keine weiteren Arbeiten (Grundierung, Tapezieren, Streichen) durchgeführt werden
-      if (dryingArea === "spachtel" && sameRoom) {
-        // Alle nachfolgenden Arbeiten sind während Spachtel-Trocknung im gleichen Raum NICHT möglich
-        if (
-          ["grundierung", "tapete", "anstrich", "wand", "decke"].includes(
-            otherArea
-          )
-        ) {
-          return {
-            canWork: false,
-            reason:
-              "Spachtelung trocknet – Grundierung, Tapezieren und Streichen im gleichen Raum nicht möglich",
-          };
-        }
-        // Nur unabhängige Bereiche (Fenster, Türen, Boden) sind möglich
-        if (["fenster", "tuer", "boden"].includes(otherArea)) {
-          return {
-            canWork: true,
-            reason:
-              "Spachtelung trocknet – Fenster/Türen/Boden sind unabhängig",
-          };
-        }
-      }
-
-      if (dryingArea === otherArea) {
-        return { canWork: false, reason: "Gleicher Bereich – muss trocknen" };
-      }
-      return {
-        canWork: true,
-        reason: "Verschiedene Bereiche – parallel möglich",
-      };
-    };
-
-    // ========================================
-    // Hilfsfunktion: Nächsten verfügbaren Task finden
-    // Bei Kundenfreigabe: RAUMÜBERGREIFEND nach Phase arbeiten
-    // 1. Überall Start/Abdecken
-    // 2. Überall Abriss
-    // 3. Überall Untergrund/Vorarbeiten
-    // 4. Weiter nach Workflow-Reihenfolge
-    // ========================================
-    // NEU: employee Parameter für parallele Zuweisung (optional)
-    const getNextAvailableTask = (employee = null) => {
-      // ========================================
-      // PRIORITÄT 0: Projekt-Tasks (Baustelleneinrichtung zuerst)
-      // ========================================
-      const projectSetup = tasksByObject["project"]?.[0];
-      if (projectSetup && projectSetup.remainingTime > 0) {
-        return {
-          task: projectSetup,
-          objectId: "project",
-          reason: "Baustelleneinrichtung zuerst",
-        };
-      }
-
-      // ========================================
-      // BEI KUNDENFREIGABE: Raumübergreifend nach Phase arbeiten
-      // ========================================
-      if (customerApproval) {
-        // Sammle alle verbleibenden Tasks (außer Projekt-Tasks)
-        const allRemainingTasks = taskPool.filter(
-          (t) => t.remainingTime > 0 && !t.isProjectTask
-        );
-
-        // Sortiere nach Phase-Order, dann workflowOrder
-        allRemainingTasks.sort((a, b) => {
-          const phaseA = workflowPhases[a.workflowPhase]?.order || 5;
-          const phaseB = workflowPhases[b.workflowPhase]?.order || 5;
-          if (phaseA !== phaseB) return phaseA - phaseB;
-          return a.workflowOrder - b.workflowOrder;
-        });
-
-        for (const task of allRemainingTasks) {
-          const objectId = task.objectId;
-
-          // Prüfe Trocknungsphasen für dieses Objekt
-          const dryingPhase = activeDryingPhases.find(
-            (d) => d.objectId === objectId
-          );
-          if (dryingPhase) {
-            const canWork = canWorkDuringDrying(
-              dryingPhase.area,
-              task.workArea,
-              true,
-              task.createsDust
-            );
-            if (!canWork.canWork) continue;
-          }
-
-          // Prüfe ob Vorgänger im gleichen Objekt UND gleicher Phase abgeschlossen
-          const objectTasks = tasksByObject[objectId] || [];
-          const samePhasePredecessors = objectTasks.filter(
-            (t) =>
-              t.workflowPhase === task.workflowPhase &&
-              t.workflowOrder < task.workflowOrder
-          );
-          const samePhasePredsComplete = samePhasePredecessors.every(
-            (t) => t.remainingTime <= 0
-          );
-
-          if (!samePhasePredsComplete) continue;
-
-          // Prüfe ob vorherige Phasen in DIESEM Objekt abgeschlossen sind
-          const taskPhaseOrder = workflowPhases[task.workflowPhase]?.order || 5;
-          const previousPhaseTasks = objectTasks.filter((t) => {
-            const tPhaseOrder = workflowPhases[t.workflowPhase]?.order || 5;
-            return tPhaseOrder < taskPhaseOrder;
-          });
-          const previousPhasesComplete = previousPhaseTasks.every(
-            (t) => t.remainingTime <= 0
-          );
-
-          if (!previousPhasesComplete) continue;
-
-          return {
-            task,
-            objectId,
-            reason: `Raumübergreifend: ${task.workflowPhaseName}`,
-          };
-        }
-      }
-
-      // ========================================
-      // OHNE KUNDENFREIGABE: Pro Objekt sequenziell arbeiten
-      // ========================================
-      else {
-        for (let i = 0; i < objectIds.length; i++) {
-          const objIndex = (currentObjectIndex + i) % objectIds.length;
-          const objectId = objectIds[objIndex];
-
-          // Überspringe Projekt-Tasks
-          if (objectId === "project" || objectId === "project-end") continue;
-
-          const tasks = tasksByObject[objectId];
-          if (!tasks) continue;
-
-          for (const task of tasks) {
-            if (task.remainingTime <= 0) continue;
-
-            // Prüfe ob Vorgänger im gleichen Objekt abgeschlossen sind
-            const taskIndex = tasks.indexOf(task);
-            const predecessorsComplete = tasks
-              .slice(0, taskIndex)
-              .every((t) => t.remainingTime <= 0);
-            if (!predecessorsComplete) continue;
-
-            // Prüfe ob Objekt in Trocknungsphase ist
-            const dryingPhase = activeDryingPhases.find(
-              (d) => d.objectId === objectId
-            );
-            if (dryingPhase) {
-              const canWork = canWorkDuringDrying(
-                dryingPhase.area,
-                task.workArea,
-                true,
-                task.createsDust
-              );
-              if (!canWork.canWork) continue;
-            }
-
-            return {
-              task,
-              objectId,
-              reason: "Workflow-Reihenfolge",
-            };
-          }
-        }
-
-        // Auch ohne Kundenfreigabe: Bei Trocknungszeit in anderen Räumen arbeiten
-        if (activeDryingPhases.length > 0) {
-          for (const objectId of objectIds) {
-            if (objectId === "project" || objectId === "project-end") continue;
-
-            const tasks = tasksByObject[objectId];
-            if (!tasks) continue;
-
-            for (const task of tasks) {
-              if (task.remainingTime <= 0) continue;
-
-              const taskIndex = tasks.indexOf(task);
-              const predecessorsComplete = tasks
-                .slice(0, taskIndex)
-                .every((t) => t.remainingTime <= 0);
-              if (!predecessorsComplete) continue;
-
-              // Prüfe Trocknungsphase
-              const dryingPhase = activeDryingPhases.find(
-                (d) => d.objectId === objectId
-              );
-              if (dryingPhase) {
-                const canWork = canWorkDuringDrying(
-                  dryingPhase.area,
-                  task.workArea,
-                  true,
-                  task.createsDust
-                );
-                if (!canWork.canWork) continue;
-              }
-
-              return {
-                task,
-                objectId,
-                reason: "Parallele Arbeit während Trocknung",
-              };
-            }
-          }
-        }
-      }
-
-      // ========================================
-      // PRIORITÄT LETZTE: Baustellenräumung (nur wenn alles andere fertig)
-      // ========================================
-      const allRegularTasksDone = taskPool
-        .filter((t) => !t.isProjectTask)
-        .every((t) => t.remainingTime <= 0);
-
-      if (allRegularTasksDone) {
-        const projectCleanup = tasksByObject["project-end"]?.[0];
-        if (projectCleanup && projectCleanup.remainingTime > 0) {
-          return {
-            task: projectCleanup,
-            objectId: "project-end",
-            reason: "Baustellenräumung zum Abschluss",
-          };
-        }
-      }
-
-      return null;
-    };
-
-    // NEU: Parallele Aufgaben-Zuweisung pro Iteration
-    // Versucht für ALLE verfügbaren Mitarbeiter gleichzeitig Aufgaben zu finden
-    const assignTasksToAllAvailableEmployees = () => {
-      const availableEmployees = getAllAvailableEmployees();
-      if (availableEmployees.length === 0) {
-        return { assigned: 0, employees: [] };
-      }
-
-      let assignedCount = 0;
-      const assignedEmployees = [];
-      const usedObjectIds = new Set(); // Verhindere Konflikte im selben Raum (wenn nicht erlaubt)
-      const allowParallelRooms = companySettings?.allowParallelRoomWork ?? true;
-
-      // Sortiere Mitarbeiter: Die mit wenigsten Stunden zuerst
-      const sortedEmployees = [...availableEmployees].sort((a, b) => {
-        const minHoursPerEmployee = companySettings?.minHoursPerEmployee || 6;
-        const minMinutesPerEmployee = minHoursPerEmployee * 60;
-
-        // Mitarbeiter unter Minimum haben höchste Priorität
-        const aUnderMin = a.currentDayMinutes < minMinutesPerEmployee;
-        const bUnderMin = b.currentDayMinutes < minMinutesPerEmployee;
-
-        if (aUnderMin && !bUnderMin) return -1;
-        if (!aUnderMin && bUnderMin) return 1;
-
-        // Dann nach Arbeitszeit (weniger = höhere Priorität)
-        return a.currentDayMinutes - b.currentDayMinutes;
-      });
-
-      // Versuche für jeden verfügbaren Mitarbeiter eine Aufgabe zu finden
-      for (const employee of sortedEmployees) {
-        // Prüfe ob Mitarbeiter noch Kapazität hat
-        if (employee.currentDayMinutes >= maxDayMinutes) continue;
-
-        // Finde beste verfügbare Aufgabe für diesen Mitarbeiter
-        const next = getNextAvailableTask(employee);
-
-        if (next) {
-          // Prüfe ob parallele Arbeit im selben Raum erlaubt ist
-          const otherEmployeeInSameObject = employeeSchedules.some(
-            (e) =>
-              e.id !== employee.id &&
-              e.currentObjectId === next.objectId &&
-              e.currentDayMinutes < maxDayMinutes
-          );
-
-          // Wenn anderer Mitarbeiter im selben Raum arbeitet, prüfe ob erlaubt
-          if (otherEmployeeInSameObject && optimalEmployees > 1) {
-            if (!customerApproval || !allowParallelRooms) {
-              // Parallele Arbeit im selben Raum nicht erlaubt → überspringe
-              continue;
-            }
-          }
-
-          // Versuche Aufgabe zuzuweisen
-          const added = addTaskToDay(next.task, next.objectId, employee);
-
-          if (added) {
-            assignedCount++;
-            assignedEmployees.push({
-              employee: employee.name,
-              task: next.task.serviceName,
-              objectId: next.objectId,
-            });
-
-            // Markiere Raum als verwendet (wenn nicht erlaubt, mehrere MA im selben Raum)
-            if (!customerApproval || !allowParallelRooms) {
-              usedObjectIds.add(next.objectId);
-            }
-          }
-        }
-      }
-
-      return { assigned: assignedCount, employees: assignedEmployees };
-    };
-
-    // Hilfsfunktion: Task oder Teil davon zum Tag hinzufügen
-    // MIT Überstunden-Logik und intelligenter Task-Aufteilung
-    // NEU: employee Parameter für parallele Zuweisung
-    const addTaskToDay = (task, objectId, employee = null) => {
-      // NEU: Verwende Mitarbeiter-Zeit statt globaler Tag-Zeit für parallele Arbeit
-      const assignedEmployee = employee || getAvailableEmployee();
-      const employeeCurrentMinutes = assignedEmployee.currentDayMinutes;
-      const remainingInDay = dailyMinutes - employeeCurrentMinutes;
-      const maxRemainingWithOvertime = maxDayMinutes - employeeCurrentMinutes;
-
-      // Wenn Mitarbeiter schon über Maximum → kein Platz mehr
-      if (maxRemainingWithOvertime <= 0) return false;
-
-      let timeToSchedule = 0;
-      let isOvertime = false;
-      let isPartial = false;
-
-      // ENTSCHEIDUNGSLOGIK:
-      // 1. Passt Task komplett in reguläre Zeit?
-      if (task.remainingTime <= remainingInDay) {
-        timeToSchedule = task.remainingTime;
-        isPartial = false;
-        isOvertime = false;
-      }
-      // 2. Passt Task komplett MIT Überstunden?
-      else if (task.remainingTime <= maxRemainingWithOvertime) {
-        timeToSchedule = task.remainingTime;
-        isPartial = false;
-        isOvertime = employeeCurrentMinutes + task.remainingTime > dailyMinutes;
-      }
-      // 3. Task muss aufgeteilt werden
-      else {
-        // Berechne wie viel Rest auf Tag 2 käme
-        const potentialRest = task.remainingTime - maxRemainingWithOvertime;
-
-        // Wenn Rest < minTaskSplitTime → alles mit Überstunden machen (wenn möglich)
-        if (potentialRest < minTaskSplitTime && potentialRest > 0) {
-          // Prüfe ob wir den kompletten Task mit etwas mehr Überstunden schaffen könnten
-          // (Ausnahme: Wenn Task viel zu groß, dann normal aufteilen)
-          if (task.remainingTime <= maxDayMinutes * 1.1) {
-            // Akzeptiere etwas mehr Überstunden um nicht für Rest einen neuen Tag zu brauchen
-            timeToSchedule = task.remainingTime;
-            isPartial = false;
-            isOvertime = true;
-          } else {
-            // Task zu groß - aufteilen aber mit Überstunden
-            timeToSchedule = maxRemainingWithOvertime;
-            isPartial = true;
-            isOvertime = employeeCurrentMinutes + timeToSchedule > dailyMinutes;
-          }
-        }
-        // Wenn heutiger Teil < minTaskSplitTime → lieber alles morgen
-        else if (remainingInDay < minTaskSplitTime && remainingInDay > 0) {
-          // Zu wenig Zeit heute für sinnvollen Arbeitsblock → Task auf morgen verschieben
-          return false; // Signal: Tag beenden, Task morgen machen
-        }
-        // Normale Aufteilung: Mit Überstunden so viel wie möglich heute
-        else {
-          timeToSchedule = maxRemainingWithOvertime;
-          isPartial = true;
-          isOvertime = employeeCurrentMinutes + timeToSchedule > dailyMinutes;
-        }
-      }
-
-      // assignedEmployee wurde bereits oben deklariert (Zeile 1294)
-      // Verwende die bereits deklarierte Variable
-
-      // Berechne isContinuation: Task wurde bereits teilweise bearbeitet
-      const isContinuation = task.totalTime !== task.remainingTime;
-
-      const taskEntry = {
-        ...task,
-        scheduledTime: timeToSchedule,
-        isPartial: isPartial,
-        isContinuation: isContinuation,
-        isOvertime: isOvertime,
-        overtimeMinutes: isOvertime
-          ? Math.max(
-              0,
-              assignedEmployee.currentDayMinutes + timeToSchedule - dailyMinutes
-            )
-          : 0,
-        continuationInfo: isContinuation
-          ? `Fortsetzung von Tag ${days.length}`
-          : isPartial
-          ? `Wird an Tag ${days.length + 2} fortgesetzt`
-          : null,
-        // NEU: Mitarbeiter-Zuweisung (IMMER zuweisen, auch bei 1 Mitarbeiter)
-        // Damit die Timeline-Anzeige pro Mitarbeiter funktioniert
-        employeeId: assignedEmployee.id,
-        employeeName: assignedEmployee.name,
-        employeeColor: employeeColors[assignedEmployee.id] || null,
-      };
-
-      // Mitarbeiter-Zeit aktualisieren (IMMER, auch bei 1 Mitarbeiter)
-      assignedEmployee.currentDayMinutes += timeToSchedule;
-      assignedEmployee.currentObjectId = objectId;
-
-      // WICHTIG: duration hinzufügen für korrekte Auslastungsberechnung
-      taskEntry.duration = timeToSchedule; // duration in Minuten (für employeeUtilization)
-
-      // WICHTIG: startTime basiert auf Mitarbeiter-Zeit VOR dem Task
-      // Bei paralleler Arbeit arbeiten Mitarbeiter unabhängig voneinander
-      // startTime = aktuelle Zeit VOR dem Task (damit Tasks bei 0:00 starten können)
-      taskEntry.startTime = employeeCurrentMinutes; // Zeit VOR dem Task
-      taskEntry.endTime = employeeCurrentMinutes + timeToSchedule; // Zeit NACH dem Task
-
-      currentDay.tasks.push(taskEntry);
-
-      // Tag-Gesamtzeit = längste Mitarbeiter-Zeit (für parallele Arbeit)
-      const maxEmployeeMinutes = Math.max(
-        ...employeeSchedules.map((e) => e.currentDayMinutes)
-      );
-      currentDay.totalWorkTime = maxEmployeeMinutes;
-      timeInDay = maxEmployeeMinutes; // Aktualisiere globale Zeit basierend auf längstem Mitarbeiter
-
-      task.remainingTime -= timeToSchedule;
-
-      // Überstunden-Marker für den Tag setzen (basierend auf längstem Mitarbeiter)
-      if (isOvertime) {
-        currentDay.hasOvertime = true;
-        const maxEmployeeMinutes = Math.max(
-          ...employeeSchedules.map((e) => e.currentDayMinutes)
-        );
-        currentDay.overtimeMinutes = Math.max(
-          0,
-          maxEmployeeMinutes - dailyMinutes
-        );
-      }
-
-      // Trocknungsphase nur wenn Task komplett abgeschlossen
-      if (task.remainingTime <= 0 && task.waitTime > 0) {
-        currentDay.totalWaitTime += task.waitTime;
-
-        // Detaillierte Trocknungsphase für Anzeige
-        const remainingTasks = taskPool.filter((t) => t.remainingTime > 0);
-        const otherObjectTasks = remainingTasks.filter(
-          (t) => t.objectId !== objectId
-        );
-        const sameObjectTasks = remainingTasks.filter(
-          (t) => t.objectId === objectId
-        );
-
-        const dryingPhase = {
-          afterTask: task.serviceName,
-          afterTaskObject: task.objectName,
-          afterTaskArea: task.workAreaName,
-          dryingArea: task.workArea,
-          dryingTime: task.waitTime,
-          dryingStart: assignedEmployee.currentDayMinutes,
-          dryingEnd: assignedEmployee.currentDayMinutes + task.waitTime,
-          sameRoomCanDo: [],
-          sameRoomCannotDo: [],
-          otherRoomCanDo: [],
-          otherRoomPotential: [],
-          parallelWorkScheduled: [], // NEU: Was tatsächlich geplant wurde
-          reason: "",
-        };
-
-        // Analysiere was während Trocknung möglich ist
-        sameObjectTasks.forEach((t) => {
-          // WICHTIG: Übergebe ob der andere Task Staub erzeugt
-          const parallelCheck = canWorkParallelInSameRoom(
-            task.workArea,
-            t.workArea,
-            t.createsDust // Stauberzeugung des anderen Tasks
-          );
-          if (parallelCheck.canWork) {
-            dryingPhase.sameRoomCanDo.push({
-              task: t.serviceName,
-              object: t.objectName,
-              area: t.workAreaName,
-              time: t.remainingTime,
-              reason: parallelCheck.reason,
-              createsDust: t.createsDust,
-            });
-          } else {
-            dryingPhase.sameRoomCannotDo.push({
-              task: t.serviceName,
-              object: t.objectName,
-              area: t.workAreaName,
-              time: t.remainingTime,
-              reason: parallelCheck.reason,
-              createsDust: t.createsDust,
-            });
-          }
-        });
-
-        if (customerApproval) {
-          otherObjectTasks.forEach((t) => {
-            const fits = t.remainingTime <= task.waitTime;
-            dryingPhase.otherRoomCanDo.push({
-              task: t.serviceName,
-              object: t.objectName,
-              area: t.workAreaName,
-              time: t.remainingTime,
-              reason: fits
-                ? `Passt komplett in Trocknungszeit`
-                : `Kann begonnen werden`,
-              fitsInDryingTime: fits,
-            });
-          });
-          dryingPhase.reason =
-            "Mit Kundenfreigabe: Arbeiten in anderen Räumen während der Trocknungszeit.";
-        } else {
-          otherObjectTasks.forEach((t) => {
-            const fits = t.remainingTime <= task.waitTime;
-            dryingPhase.otherRoomPotential.push({
-              task: t.serviceName,
-              object: t.objectName,
-              area: t.workAreaName,
-              time: t.remainingTime,
-              reason: fits ? `Würde komplett passen` : `Könnte begonnen werden`,
-              fitsInDryingTime: fits,
-            });
-          });
-          dryingPhase.reason =
-            "Ohne Kundenfreigabe: Wartezeit bis Trocknung abgeschlossen.";
-        }
-
-        currentDay.dryingPhases.push(dryingPhase);
-
-        // Aktive Trocknungsphase registrieren
-        // WICHTIG: endsAt basiert auf Mitarbeiter-Zeit, nicht globaler Tag-Zeit
-        activeDryingPhases.push({
-          objectId: objectId,
-          area: task.workArea,
-          endsAt: assignedEmployee.currentDayMinutes + task.waitTime,
-          serviceName: task.serviceName,
-          startedByEmployee: assignedEmployee.id,
-        });
-      }
-
-      if (task.remainingTime <= 0) {
-        task.scheduled = true;
-      }
-
-      return true;
-    };
-
-    // Hilfsfunktion: Neuen Tag starten
-    const startNewDay = () => {
-      // Auslastung berechnen (bei Überstunden kann > 100% sein)
-      currentDay.utilization = Math.round(
-        (currentDay.totalWorkTime / dailyMinutes) * 100
-      );
-      // Überstunden-Info final setzen
-      currentDay.overtimeMinutes = Math.max(
-        0,
-        currentDay.totalWorkTime - dailyMinutes
-      );
-      currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
-
-      // WICHTIG: Berechne employeeUtilization für diesen Tag
-      // (ähnlich wie in workflowService.endCurrentDay)
-      const employeeUtilization = employeeSchedules.map((emp) => ({
-        employeeId: emp.id,
-        employeeName: emp.name,
-        minutes: emp.currentDayMinutes,
-        hours: emp.currentDayMinutes / 60,
-        utilizationPercent: (emp.currentDayMinutes / dailyMinutes) * 100,
-        meetsMinimum:
-          emp.currentDayMinutes / 60 >=
-            (companySettings?.minHoursPerEmployee || 6) ||
-          emp.currentDayMinutes === 0,
-      }));
-
-      // Speichere employeeUtilization im Tag
-      currentDay.employeeUtilization = employeeUtilization;
-
-      days.push({ ...currentDay });
-      currentDay = {
-        dayNumber: days.length + 1,
-        tasks: [],
-        totalWorkTime: 0,
-        totalWaitTime: 0,
-        dryingPhases: [],
-        utilization: 0,
-        hasOvertime: false,
-        overtimeMinutes: 0,
-        employeeUtilization: [], // NEU: Wird am Ende des Tages gesetzt
-      };
-      timeInDay = 0;
-      activeDryingPhases = []; // Über Nacht trocknen alle Oberflächen
-
-      // NEU: Mitarbeiter-Zeiten für neuen Tag zurücksetzen
-      employeeSchedules.forEach((e) => {
-        e.currentDayMinutes = 0;
-        e.currentObjectId = null;
-      });
-    };
-
-    // NEU: Hauptschleife mit PARALLELER Tagesplanung
-    // Pro Iteration werden ALLE verfügbaren Mitarbeiter gleichzeitig beschäftigt
-    let iterations = 0;
-    const maxIterations = 1000;
-    let noProgressCount = 0; // Zähler für Iterationen ohne Fortschritt
-
-    while (iterations < maxIterations) {
-      iterations++;
-
-      // Alle Tasks erledigt?
-      const allDone = taskPool.every((t) => t.remainingTime <= 0);
-      if (allDone) {
-        // Prüfe Mindeststunden vor Beendigung
-        const minHoursPerEmployee = companySettings?.minHoursPerEmployee || 6;
-        const minMinutesPerEmployee = minHoursPerEmployee * 60;
-        const allEmployeesMeetMinimum = employeeSchedules.every(
-          (emp) =>
-            emp.currentDayMinutes === 0 ||
-            emp.currentDayMinutes >= minMinutesPerEmployee
-        );
-
-        if (!allEmployeesMeetMinimum && currentDay.tasks.length > 0) {
-          // Versuche noch Tasks zu finden für Mitarbeiter unter Minimum
-          const result = assignTasksToAllAvailableEmployees();
-          if (result.assigned > 0) {
-            noProgressCount = 0;
-            continue;
-          }
-        }
-        break;
-      }
-
-      // Abgelaufene Trocknungsphasen entfernen (basierend auf längstem Mitarbeiter)
-      const maxEmployeeMinutes = Math.max(
-        ...employeeSchedules.map((e) => e.currentDayMinutes),
-        timeInDay
-      );
-      activeDryingPhases = activeDryingPhases.filter((d) => {
-        // Finde den Mitarbeiter, der diese Trocknungsphase gestartet hat
-        const startedByEmployee = employeeSchedules.find(
-          (e) => e.currentObjectId === d.objectId
-        );
-        const referenceTime = startedByEmployee
-          ? startedByEmployee.currentDayMinutes
-          : maxEmployeeMinutes;
-        return d.endsAt > referenceTime;
-      });
-
-      // NEU: Versuche für ALLE verfügbaren Mitarbeiter gleichzeitig Aufgaben zu finden
-      const result = assignTasksToAllAvailableEmployees();
-
-      if (result.assigned > 0) {
-        noProgressCount = 0; // Fortschritt gemacht
-        // Aktualisiere timeInDay basierend auf längstem Mitarbeiter
-        timeInDay = Math.max(
-          ...employeeSchedules.map((e) => e.currentDayMinutes)
-        );
-      } else {
-        noProgressCount++;
-
-        // Keine Aufgaben mehr zugewiesen
-        // Prüfe ob Tag mit Überstunden fast voll ist
-        const maxEmployeeMinutes = Math.max(
-          ...employeeSchedules.map((e) => e.currentDayMinutes)
-        );
-        if (maxEmployeeMinutes >= maxDayMinutes * 0.95) {
-          // Tag ist fast voll (inkl. Überstunden)
-          startNewDay();
-          continue;
-        } else if (activeDryingPhases.length > 0) {
-          // Trocknungszeit - prüfen ob heute noch etwas passiert
-          const minDryingEnd = Math.min(
-            ...activeDryingPhases
-              .map((d) => {
-                const startedByEmployee = employeeSchedules.find(
-                  (e) => e.currentObjectId === d.objectId
-                );
-                return startedByEmployee ? d.endsAt : Infinity;
-              })
-              .filter((t) => t !== Infinity)
-          );
-
-          if (minDryingEnd <= maxDayMinutes && minDryingEnd !== Infinity) {
-            // Trocknung endet heute (evtl. mit Überstunden) - Zeit vorspulen
-            // Aktualisiere alle Mitarbeiter, die auf diese Trocknung warten
-            activeDryingPhases = activeDryingPhases.filter((d) => {
-              const startedByEmployee = employeeSchedules.find(
-                (e) => e.currentObjectId === d.objectId
-              );
-              if (startedByEmployee && d.endsAt <= minDryingEnd) {
-                startedByEmployee.currentDayMinutes = Math.max(
-                  startedByEmployee.currentDayMinutes,
-                  minDryingEnd
-                );
-              }
-              return d.endsAt > minDryingEnd;
-            });
-            timeInDay = Math.max(
-              ...employeeSchedules.map((e) => e.currentDayMinutes)
-            );
-          } else {
-            // Trocknung dauert bis morgen - prüfe ob andere Räume bearbeitet werden können
-            const unfinishedOtherObjects = taskPool.filter(
-              (t) =>
-                t.remainingTime > 0 &&
-                !activeDryingPhases.some((d) => d.objectId === t.objectId)
-            );
-
-            if (unfinishedOtherObjects.length > 0 && customerApproval) {
-              // Noch Arbeit in anderen Räumen - weitermachen
-              continue;
-            } else {
-              // Prüfe Mindeststunden vor Tagwechsel
-              const minHoursPerEmployee =
-                companySettings?.minHoursPerEmployee || 6;
-              const minMinutesPerEmployee = minHoursPerEmployee * 60;
-              const allEmployeesMeetMinimum = employeeSchedules.every(
-                (emp) =>
-                  emp.currentDayMinutes === 0 ||
-                  emp.currentDayMinutes >= minMinutesPerEmployee
-              );
-
-              if (!allEmployeesMeetMinimum && currentDay.tasks.length > 0) {
-                // Versuche noch Tasks zu finden für Mitarbeiter unter Minimum
-                continue;
-              }
-
-              // Tag beenden
-              startNewDay();
-            }
-          }
-        } else {
-          // Keine Trocknungsphasen - prüfe ob noch Arbeit möglich ist
-          if (noProgressCount > 10) {
-            // Zu viele Iterationen ohne Fortschritt - Tag beenden
-            if (currentDay.tasks.length > 0) {
-              startNewDay();
-            } else {
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    // Letzten Tag hinzufügen wenn nicht leer
-    if (currentDay.tasks.length > 0) {
-      currentDay.utilization = Math.round(
-        (currentDay.totalWorkTime / dailyMinutes) * 100
-      );
-      currentDay.overtimeMinutes = Math.max(
-        0,
-        currentDay.totalWorkTime - dailyMinutes
-      );
-      currentDay.hasOvertime = currentDay.overtimeMinutes > 0;
-
-      // WICHTIG: Berechne employeeUtilization für den letzten Tag
-      const employeeUtilization = employeeSchedules.map((emp) => ({
-        employeeId: emp.id,
-        employeeName: emp.name,
-        minutes: emp.currentDayMinutes,
-        hours: emp.currentDayMinutes / 60,
-        utilizationPercent: (emp.currentDayMinutes / dailyMinutes) * 100,
-        meetsMinimum:
-          emp.currentDayMinutes / 60 >=
-            (companySettings?.minHoursPerEmployee || 6) ||
-          emp.currentDayMinutes === 0,
-      }));
-
-      // Speichere employeeUtilization im Tag
-      currentDay.employeeUtilization = employeeUtilization;
-
-      days.push(currentDay);
-    }
-
-    // Zusammenfassung berechnen
-    const totalWorkMinutes =
-      results.totalTime || taskPool.reduce((sum, t) => sum + t.totalTime, 0);
-    const totalWorkHours = totalWorkMinutes / 60;
-    const totalWaitMinutes = taskPool.reduce(
-      (sum, t) => sum + (t.waitTime || 0),
-      0
-    );
-    const avgUtilization =
-      days.length > 0
-        ? Math.round(
-            days.reduce((sum, d) => sum + d.utilization, 0) / days.length
-          )
-        : 0;
-
-    // Mitarbeiter-Erklärung
-    let employeeExplanation = [];
-
-    if (totalWorkHours <= HOURS_PER_DAY) {
-      employeeExplanation.push({
-        text: `Die Gesamtarbeitszeit (${formatTime(
-          totalWorkMinutes
-        )}) passt in einen Arbeitstag (${HOURS_PER_DAY}h).`,
-        type: "info",
-      });
-      employeeExplanation.push({
-        text: `Ein Mitarbeiter ist für diese Arbeit optimal.`,
-        type: "result",
-      });
-    } else {
-      const optimalEmployees =
-        results.optimalEmployees || Math.ceil(totalWorkHours / HOURS_PER_DAY);
-      const hoursPerEmployee = totalWorkHours / optimalEmployees;
-
-      employeeExplanation.push({
-        text: `Gesamtarbeitszeit: ${formatTime(
-          totalWorkMinutes
-        )} (${totalWorkHours.toFixed(1)} Stunden)`,
-        type: "info",
-      });
-      employeeExplanation.push({
-        text: `Arbeitstag: ${HOURS_PER_DAY} Stunden`,
-        type: "info",
-      });
-
-      if (hoursPerEmployee < 4) {
-        employeeExplanation.push({
-          text: `Bei mehr Mitarbeitern würde jeder weniger als 4h Arbeit haben – Effizienzverlust.`,
-          type: "warning",
-        });
-      }
-
-      employeeExplanation.push({
-        text: `Berechnung: ${totalWorkHours.toFixed(
-          1
-        )}h ÷ ${HOURS_PER_DAY}h = ${(totalWorkHours / HOURS_PER_DAY).toFixed(
-          1
-        )} → ${optimalEmployees} Mitarbeiter`,
-        type: "calculation",
-      });
-    }
-
-    // Hinweise zu Trocknungszeiten
-    if (totalWaitMinutes > 30) {
-      if (customerApproval) {
-        employeeExplanation.push({
-          text: `Mit Kundenfreigabe: Während ${formatTime(
-            totalWaitMinutes
-          )} Trocknungszeit werden Arbeiten in anderen Räumen durchgeführt.`,
-          type: "parallel",
-        });
-      } else {
-        employeeExplanation.push({
-          text: `Hinweis: Es gibt ${formatTime(
-            totalWaitMinutes
-          )} Trocknungszeit.`,
-          type: "warning",
-        });
-        employeeExplanation.push({
-          text: `Tipp: Mit Kundenfreigabe könnten während der Trocknungszeiten Arbeiten in anderen Räumen durchgeführt werden.`,
-          type: "tip",
-        });
-      }
-    }
-
-    // Hinweis zu optimierter Planung
-    const hasPartialTasks = days.some((d) =>
-      d.tasks.some((t) => t.isPartial || t.isContinuation)
-    );
-    if (hasPartialTasks) {
-      employeeExplanation.push({
-        text: `Die Planung wurde optimiert: Einige Arbeiten werden über mehrere Tage aufgeteilt, um die Arbeitstage bestmöglich zu nutzen.`,
-        type: "info",
-      });
-    }
-
-    // Auslastungs-Info
-    if (avgUtilization > 0) {
-      employeeExplanation.push({
-        text: `Durchschnittliche Tagesauslastung: ${avgUtilization}%`,
-        type:
-          avgUtilization >= 80
-            ? "success"
-            : avgUtilization >= 60
-            ? "info"
-            : "warning",
-      });
-    }
-
-    // Überstunden-Info
-    const daysWithOvertime = days.filter(
-      (d) => d.hasOvertime && d.overtimeMinutes > 0
-    );
-    const totalOvertimeMinutes = days.reduce(
-      (sum, d) => sum + (d.overtimeMinutes || 0),
-      0
-    );
-    if (daysWithOvertime.length > 0) {
-      employeeExplanation.push({
-        text: `Überstunden: ${formatTime(totalOvertimeMinutes)} an ${
-          daysWithOvertime.length
-        } Tag(en) – vermeidet ineffiziente Kurztage.`,
-        type: "info",
-      });
-    }
-
-    return {
-      days,
-      allTasks: taskPool,
-      summary: {
-        totalDays: days.length,
-        totalWorkTime: totalWorkMinutes,
-        totalWaitTime: totalWaitMinutes,
-        optimalEmployees: results.optimalEmployees || 1,
-        employeeExplanation,
-        canParallelize: customerApproval && totalWaitMinutes > 30,
-        customerApproval,
-        avgUtilization,
-      },
-    };
-  }, [results, customerApproval]);
 
   if (!results?.objects?.length) return null;
 
@@ -2422,7 +541,7 @@ export default function DayPlanningDialog({
 
                   {/* SCHRITT 3: MITARBEITER-AUSLASTUNG ANZEIGEN */}
                   {(() => {
-                    const employeeUtil = getEmployeeUtilization(day);
+                    const employeeUtil = getEmployeeUtilizationWrapper(day);
                     if (employeeUtil.length > 0) {
                       return (
                         <div
@@ -2525,9 +644,8 @@ export default function DayPlanningDialog({
                   <div style={{ padding: "15px" }}>
                     {/* Zeitskala wird pro Mitarbeiter individuell angezeigt */}
 
-                    {/* NEU: Pro Mitarbeiter ein eigener Zeitstrahl */}
                     {(() => {
-                      const employees = getEmployeesForDay(day);
+                      const employees = getEmployeesForDayWrapper(day);
 
                       return employees.map((employee, empIdx) => (
                         <div
@@ -2612,6 +730,58 @@ export default function DayPlanningDialog({
                               width: "100%", // Volle Breite des Containers
                             }}
                           >
+                            {/* Farbiger Hintergrund für Standardarbeitszeit */}
+                            {(() => {
+                              const maxHours = employee.maxTime / 60;
+                              const standardWorkPercent = Math.min((8 * 60 / employee.maxTime) * 100, 100);
+                              const overtimePercent = maxHours > 8 ? Math.min(((maxHours - 8) * 60 / employee.maxTime) * 100, 100) : 0;
+                              
+                              return (
+                                <>
+                                  {/* Standardarbeitszeit (0-8h) - Grün */}
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      left: "0%",
+                                      width: `${standardWorkPercent}%`,
+                                      height: "100%",
+                                      background: "linear-gradient(90deg, #e8f5e9 0%, #c8e6c9 100%)",
+                                      opacity: 0.3,
+                                      zIndex: 0,
+                                    }}
+                                  />
+                                  {/* Überstunden (8-10h) - Gelb */}
+                                  {maxHours > 8 && (
+                                    <div
+                                      style={{
+                                        position: "absolute",
+                                        left: `${standardWorkPercent}%`,
+                                        width: `${Math.min((2 * 60 / employee.maxTime) * 100, overtimePercent)}%`,
+                                        height: "100%",
+                                        background: "linear-gradient(90deg, #fff9c4 0%, #fff59d 100%)",
+                                        opacity: 0.3,
+                                        zIndex: 0,
+                                      }}
+                                    />
+                                  )}
+                                  {/* Überstunden (>10h) - Rot */}
+                                  {maxHours > 10 && (
+                                    <div
+                                      style={{
+                                        position: "absolute",
+                                        left: `${standardWorkPercent + Math.min((2 * 60 / employee.maxTime) * 100, overtimePercent)}%`,
+                                        width: `${Math.max(0, (maxHours - 10) * 60 / employee.maxTime * 100)}%`,
+                                        height: "100%",
+                                        background: "linear-gradient(90deg, #ffebee 0%, #ffcdd2 100%)",
+                                        opacity: 0.3,
+                                        zIndex: 0,
+                                      }}
+                                    />
+                                  )}
+                                </>
+                              );
+                            })()}
+
                             {/* Stundenmarkierungen - dynamisch basierend auf maxTime */}
                             {(() => {
                               const maxHours = Math.ceil(employee.maxTime / 60);
@@ -2630,10 +800,10 @@ export default function DayPlanningDialog({
                                         }%`,
                                         top: 0,
                                         bottom: 0,
-                                        width: "1px",
+                                        width: h === 8 ? "2px" : "1px",
                                         background:
                                           h === 8
-                                            ? "#999"
+                                            ? "#4caf50"
                                             : h === maxHours
                                             ? "#bbb"
                                             : "#ddd",
@@ -2685,65 +855,27 @@ export default function DayPlanningDialog({
                                   ? taskNumberInDay
                                   : taskIdx + 1;
 
-                              // NEU: Eindeutige Farbe für jeden einzelnen Arbeitsschritt
-                              // Basierend auf task.id oder serviceId + objectId für Konsistenz
-                              const getTaskColor = (task) => {
-                                // Verwende eindeutige Task-ID für konsistente Farbzuweisung
-                                const uniqueId =
-                                  task.id ||
-                                  `${task.serviceId || task.serviceName}-${
-                                    task.objectId || "unknown"
-                                  }`;
-
-                                // Spezielle Farben für Projekt-Tasks
-                                if (task.objectId === "project")
-                                  return "#607D8B"; // Grau für Baustelle
-                                if (task.objectId === "project-end")
-                                  return "#9E9E9E"; // Grau für Räumung
-
-                                // Generiere Hash aus eindeutiger ID
-                                const hash = uniqueId
-                                  .split("")
-                                  .reduce((acc, char) => {
-                                    return (
-                                      char.charCodeAt(0) + ((acc << 5) - acc)
-                                    );
-                                  }, 0);
-
-                                // Erweiterte Farbpalette für bessere Unterscheidung
-                                const colors = [
-                                  "#1976d2", // Blau
-                                  "#388e3c", // Grün
-                                  "#7b1fa2", // Lila
-                                  "#ff9800", // Orange
-                                  "#00796b", // Teal
-                                  "#d32f2f", // Rot
-                                  "#c2185b", // Pink
-                                  "#512da8", // Dunkel-Lila
-                                  "#0288d1", // Hellblau
-                                  "#689f38", // Hellgrün
-                                  "#f57c00", // Dunkelorange
-                                  "#5d4037", // Braun
-                                  "#455a64", // Blaugrau
-                                  "#7b1fa2", // Violett
-                                  "#c2185b", // Magenta
-                                  "#303f9f", // Indigo
-                                  "#00796b", // Türkis
-                                  "#e64a19", // Rotorange
-                                  "#5e35b1", // Tiefviolett
-                                  "#00897b", // Mint
-                                  "#d84315", // Tiefrot
-                                  "#6a1b9a", // Purpur
-                                  "#0277bd", // Azurblau
-                                  "#2e7d32", // Waldgrün
-                                  "#e91e63", // Pink
-                                  "#795548", // Kaffeebraun
-                                ];
-                                return colors[Math.abs(hash) % colors.length];
+                              // Helper-Funktion für RGB-Konvertierung
+                              const hexToRgb = (hex) => {
+                                const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                                return result ? {
+                                  r: parseInt(result[1], 16),
+                                  g: parseInt(result[2], 16),
+                                  b: parseInt(result[3], 16)
+                                } : null;
                               };
 
                               // Eindeutige Farbe für diesen Arbeitsschritt
                               const bgColor = getTaskColor(task);
+                              
+                              // Erstelle Gradient aus der Basis-Farbe
+                              const rgb = hexToRgb(bgColor);
+                              const lighterColor = rgb 
+                                ? `rgba(${Math.min(255, rgb.r + 30)}, ${Math.min(255, rgb.g + 30)}, ${Math.min(255, rgb.b + 30)}, 1)`
+                                : bgColor;
+                              const darkerColor = rgb
+                                ? `rgba(${Math.max(0, rgb.r - 20)}, ${Math.max(0, rgb.g - 20)}, ${Math.max(0, rgb.b - 20)}, 1)`
+                                : bgColor;
 
                               // NEU: Entscheide, ob nur Nummer oder Text angezeigt wird
                               const showOnlyNumber = widthPercent < 8; // Wenn Block < 8% breit, nur Nummer
@@ -2751,33 +883,28 @@ export default function DayPlanningDialog({
                                 widthPercent >= 8 && widthPercent < 15; // 8-15%: Kurzer Text
                               const showFullText = widthPercent >= 15; // >= 15%: Volltext
 
-                              // NEU: Verbesserter Tooltip mit allen Details
-                              const tooltipText = `${displayTaskNumber}. ${
-                                task.serviceName
-                              }\n${
-                                task.objectName || task.objectId || "Unbekannt"
-                              }\nZeit: ${formatTime(taskDuration)}${
-                                waitTime > 0
-                                  ? ` + ${formatTime(waitTime)} Trocknung`
-                                  : ""
-                              }${task.isPartial ? "\n→ wird fortgesetzt" : ""}${
-                                task.isContinuation ? "\n→ Fortsetzung" : ""
-                              }${
-                                task.quantity
-                                  ? `\n${task.quantity} ${task.unit}`
-                                  : ""
-                              }`;
-
                               return (
                                 <React.Fragment key={taskIdx}>
                                   {/* Arbeitsblock */}
                                   <div
+                                    onMouseEnter={(e) => {
+                                      setHoveredTask({ ...task, displayTaskNumber, taskDuration, waitTime, startTime, endTime });
+                                      setTooltipPosition({ x: e.clientX, y: e.clientY });
+                                    }}
+                                    onMouseMove={(e) => {
+                                      setTooltipPosition({ x: e.clientX, y: e.clientY });
+                                    }}
+                                    onMouseLeave={() => {
+                                      setHoveredTask(null);
+                                    }}
                                     style={{
                                       position: "absolute",
                                       left: `${leftPercent}%`,
                                       width: `${Math.max(widthPercent, 1)}%`,
                                       height: "100%",
-                                      background: bgColor,
+                                      background: hoveredTask?.id === task.id || hoveredTask?.serviceId === task.serviceId && hoveredTask?.objectId === task.objectId && Math.abs((hoveredTask?.startTime || 0) - startTime) < 5
+                                        ? `linear-gradient(135deg, ${lighterColor} 0%, ${bgColor} 50%, ${darkerColor} 100%)`
+                                        : `linear-gradient(135deg, ${bgColor} 0%, ${darkerColor} 100%)`,
                                       borderRadius: "3px",
                                       display: "flex",
                                       alignItems: "center",
@@ -2793,12 +920,21 @@ export default function DayPlanningDialog({
                                       overflow: "hidden",
                                       whiteSpace: "nowrap",
                                       boxSizing: "border-box",
-                                      // NEU: Verbesserte Umrandung mit dunklerem Border und Schatten
-                                      border: `2px solid ${bgColor}`,
-                                      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                                      cursor: "help", // Zeigt an, dass Tooltip verfügbar ist
+                                      border: hoveredTask?.id === task.id || hoveredTask?.serviceId === task.serviceId && hoveredTask?.objectId === task.objectId && Math.abs((hoveredTask?.startTime || 0) - startTime) < 5
+                                        ? `3px solid ${lighterColor}`
+                                        : `2px solid ${darkerColor}`,
+                                      boxShadow: hoveredTask?.id === task.id || hoveredTask?.serviceId === task.serviceId && hoveredTask?.objectId === task.objectId && Math.abs((hoveredTask?.startTime || 0) - startTime) < 5
+                                        ? "0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.2)"
+                                        : "0 2px 6px rgba(0,0,0,0.25)",
+                                      cursor: "pointer",
+                                      transition: "all 0.2s ease-out",
+                                      transform: hoveredTask?.id === task.id || hoveredTask?.serviceId === task.serviceId && hoveredTask?.objectId === task.objectId && Math.abs((hoveredTask?.startTime || 0) - startTime) < 5
+                                        ? "scale(1.05)"
+                                        : "scale(1)",
+                                      zIndex: hoveredTask?.id === task.id || hoveredTask?.serviceId === task.serviceId && hoveredTask?.objectId === task.objectId && Math.abs((hoveredTask?.startTime || 0) - startTime) < 5
+                                        ? 10
+                                        : 5,
                                     }}
-                                    title={tooltipText}
                                   >
                                     {showOnlyNumber ? (
                                       // Nur Nummer anzeigen bei sehr schmalen Blöcken
@@ -2824,9 +960,20 @@ export default function DayPlanningDialog({
                                         (waitTime / employee.maxTime) * 100;
                                       const showDryingText =
                                         dryingWidthPercent > 8;
+                                      const isHovered = hoveredTask?.id === task.id || (hoveredTask?.serviceId === task.serviceId && hoveredTask?.objectId === task.objectId && Math.abs((hoveredTask?.startTime || 0) - startTime) < 5);
 
                                       return (
                                         <div
+                                          onMouseEnter={(e) => {
+                                            setHoveredTask({ ...task, displayTaskNumber, taskDuration, waitTime, startTime, endTime, isDrying: true });
+                                            setTooltipPosition({ x: e.clientX, y: e.clientY });
+                                          }}
+                                          onMouseMove={(e) => {
+                                            setTooltipPosition({ x: e.clientX, y: e.clientY });
+                                          }}
+                                          onMouseLeave={() => {
+                                            setHoveredTask(null);
+                                          }}
                                           style={{
                                             position: "absolute",
                                             left: `${
@@ -2837,7 +984,9 @@ export default function DayPlanningDialog({
                                               1
                                             )}%`,
                                             height: "100%",
-                                            background: "#ff9800", // Orange für Trocknungszeit
+                                            background: isHovered
+                                              ? "linear-gradient(135deg, #ffb74d 0%, #ff9800 50%, #f57c00 100%)"
+                                              : "linear-gradient(135deg, #ff9800 0%, #f57c00 100%)",
                                             borderRadius: "3px",
                                             display: "flex",
                                             alignItems: "center",
@@ -2850,20 +999,18 @@ export default function DayPlanningDialog({
                                             overflow: "hidden",
                                             whiteSpace: "nowrap",
                                             boxSizing: "border-box",
-                                            // NEU: Verbesserte Umrandung mit dunklerem Border und Schatten
-                                            border: "2px solid #e65100", // Dunkleres Orange für Border
-                                            boxShadow:
-                                              "0 1px 3px rgba(0,0,0,0.2)",
-                                            opacity: 0.85, // Leicht transparent für Unterscheidung
-                                            cursor: "help",
+                                            border: isHovered
+                                              ? "3px solid #ffb74d"
+                                              : "2px solid #e65100",
+                                            boxShadow: isHovered
+                                              ? "0 4px 12px rgba(255,152,0,0.5), 0 0 0 1px rgba(255,255,255,0.2)"
+                                              : "0 2px 6px rgba(0,0,0,0.25)",
+                                            opacity: isHovered ? 1 : 0.9,
+                                            cursor: "pointer",
+                                            transition: "all 0.2s ease-out",
+                                            transform: isHovered ? "scale(1.05)" : "scale(1)",
+                                            zIndex: isHovered ? 10 : 5,
                                           }}
-                                          title={`⏱ Trocknungszeit: ${formatTime(
-                                            waitTime
-                                          )}\nNach: ${task.serviceName}\n${
-                                            task.objectName ||
-                                            task.objectId ||
-                                            ""
-                                          }`}
                                         >
                                           {showDryingText ? (
                                             <span>
@@ -3106,7 +1253,7 @@ export default function DayPlanningDialog({
                                 </span>
                                 {task.quantity?.toFixed(1)} {task.unit} ·{" "}
                                 {formatTime(
-                                  task.scheduledTime || task.workTime
+                                  task.duration || task.scheduledTime || task.workTime
                                 )}
                                 {/* Anzeige für aufgeteilte Tasks */}
                                 {(task.isPartial || task.isContinuation) && (
@@ -3219,7 +1366,7 @@ export default function DayPlanningDialog({
                                       (Gesamt: {formatTime(task.totalTime)},
                                       heute:{" "}
                                       {formatTime(
-                                        task.scheduledTime || task.workTime
+                                        task.duration || task.scheduledTime || task.workTime
                                       )}
                                       )
                                     </span>
@@ -3540,6 +1687,16 @@ export default function DayPlanningDialog({
                 </div>
               </div>
             </div>
+            
+            {/* Custom Tooltip - außerhalb des scrollbaren Bereichs */}
+            {hoveredTask && (
+              <TaskTooltip
+                task={hoveredTask}
+                position={tooltipPosition}
+                displayTaskNumber={hoveredTask.displayTaskNumber || 0}
+                getTaskColor={getTaskColor}
+              />
+            )}
           </div>
         </div>
       )}

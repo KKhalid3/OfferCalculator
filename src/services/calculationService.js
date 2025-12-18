@@ -574,7 +574,14 @@ export async function performCalculation() {
           specialNotes: object.specialNotes || []
         });
 
-        allCalculations.push(calculation);
+        // Objektinformationen für Workflow-Planung hinzufügen
+        allCalculations.push({
+          ...calculation,
+          objectName: object.name,
+          objectType: object.objectCategory || '',
+          serviceName: service.title,
+          unit: service.unit || ''
+        });
 
         const isFromSpecialNote = additionalServiceIds.includes(service.id);
 
@@ -680,6 +687,20 @@ export async function performCalculation() {
     workflow = await planWorkflow(allCalculations, customerApproval);
     results.totalDays = workflow.totalDays;
     results.optimalEmployees = workflow.optimalEmployees;
+    
+    // NEU: Workflow-Daten an results übergeben für UI
+    results.workflow = {
+      days: workflow.days,
+      totalDays: workflow.totalDays,
+      plannedDays: workflow.plannedDays,
+      totalHours: workflow.totalHours,
+      optimalEmployees: workflow.optimalEmployees,
+      employeeExplanation: workflow.employeeExplanation,
+      employeeCount: workflow.employeeCount,
+      workPerEmployee: workflow.workPerEmployee,
+      projectDays: workflow.projectDays,
+      isParallel: workflow.isParallel
+    };
 
     // ========================================
     // PHASE 4: Mindestzeit nach Tagesplanung anwenden

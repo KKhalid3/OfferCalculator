@@ -22,7 +22,6 @@ export default function CompanyOnboarding({ onComplete }) {
     siteClearanceHours: 1,
     siteClearanceMinutes: 0,
     // Mehrpersonal-Planung
-    minHoursForMultiEmployee: 16,
     minHoursPerEmployee: 6,
     maxEfficiencyLossPercent: 10,
     allowParallelRoomWork: true,
@@ -53,7 +52,6 @@ export default function CompanyOnboarding({ onComplete }) {
         siteClearanceHours: Math.floor(siteClearance / 60),
         siteClearanceMinutes: siteClearance % 60,
         // Mehrpersonal-Planung
-        minHoursForMultiEmployee: settings.minHoursForMultiEmployee || 16,
         minHoursPerEmployee: settings.minHoursPerEmployee || 6,
         maxEfficiencyLossPercent: settings.maxEfficiencyLossPercent || 10,
         allowParallelRoomWork: settings.allowParallelRoomWork ?? true,
@@ -88,7 +86,6 @@ export default function CompanyOnboarding({ onComplete }) {
       siteClearance:
         formData.siteClearanceHours * 60 + formData.siteClearanceMinutes,
       // Mehrpersonal-Planung
-      minHoursForMultiEmployee: formData.minHoursForMultiEmployee,
       minHoursPerEmployee: formData.minHoursPerEmployee,
       maxEfficiencyLossPercent: formData.maxEfficiencyLossPercent,
       allowParallelRoomWork: formData.allowParallelRoomWork,
@@ -301,31 +298,6 @@ export default function CompanyOnboarding({ onComplete }) {
           </p>
 
           <div style={{ display: "grid", gap: "20px" }}>
-            {/* Ab wieviel Stunden Mehrpersonal */}
-            <div>
-              <label style={{ display: "block", marginBottom: "5px" }}>
-                Mehrpersonal-Schwelle (ab dieser Gesamtarbeitszeit):
-              </label>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "10px" }}
-              >
-                <input
-                  type="number"
-                  name="minHoursForMultiEmployee"
-                  value={formData.minHoursForMultiEmployee}
-                  onChange={handleChange}
-                  min="8"
-                  max="80"
-                  style={{ width: "80px" }}
-                />
-                <span>Stunden</span>
-              </div>
-              <small style={{ color: "#888" }}>
-                Erst ab dieser Stundenzahl wird Mehrpersonal in Betracht gezogen
-                (z.B. 16h = 2 Arbeitstage)
-              </small>
-            </div>
-
             {/* Minimum Stunden pro Mitarbeiter */}
             <div>
               <label style={{ display: "block", marginBottom: "5px" }}>

@@ -25,9 +25,6 @@ export const companySettingsSchema = {
         onboardingCompleted: { type: 'boolean' },
 
         // === Mehrpersonal-Planung ===
-        // Ab wieviel Gesamtstunden Mehrpersonal überhaupt in Betracht gezogen wird
-        minHoursForMultiEmployee: { type: ['number', 'null'] }, // z.B. 16h = 2 Arbeitstage
-
         // Mindestens X Stunden pro Mitarbeiter (um Leerlauf zu vermeiden)
         minHoursPerEmployee: { type: ['number', 'null'] }, // z.B. 6h (nicht unter 1 Tag)
 
@@ -73,7 +70,6 @@ export const defaultCompanySettings = {
     onboardingCompleted: false,
 
     // Mehrpersonal-Planung Defaults
-    minHoursForMultiEmployee: 16, // Ab 16h (2 Arbeitstage) Mehrpersonal erwägen
     minHoursPerEmployee: 6, // Min 6h pro Mitarbeiter (Restzeit max 2h Leerlauf)
     maxEfficiencyLossPercent: 10, // Max 10% Effizienzverlust akzeptabel
     allowParallelRoomWork: true, // Parallelarbeit in verschiedenen Räumen erlaubt
